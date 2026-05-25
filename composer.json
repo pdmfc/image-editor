@@ -1,0 +1,40 @@
+{
+    "name": "pdmfc/image-editor",
+    "description": "Laravel package for image gallery, capture and editing (Inertia + Vue 3)",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "PDMFC",
+            "email": "miguel.goncalves@pdmfc.com"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/support": "^10.0|^11.0",
+        "inertiajs/inertia-laravel": "^0.6.3",
+        "intervention/image": "^4.0",
+        "intervention/image-laravel": "^4.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.22|^9.0",
+        "phpunit/phpunit": "^10.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "PDMFC\\ImageEditor\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "PDMFC\\ImageEditor\\Providers\\ImageEditorServiceProvider"
+            ]
+        }
+    },
+    "suggest": {
+        "laravel/reverb": "Actualização em tempo real da galeria quando chegam fotos do QR (WebSockets)"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
