@@ -6,6 +6,12 @@ return [
         'temp_path' => 'photos/tmp',
     ],
 
+    'routes' => [
+        'prefix' => 'api',
+        'browser_middleware' => ['web'],
+        'callback_middleware' => ['api'],
+    ],
+
     'name' => 'Image Editor',
 
     'demo_routes' => env('IMAGE_EDITOR_DEMO_ROUTES', false),

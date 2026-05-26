@@ -51,7 +51,7 @@ class ImageEditorServiceProvider extends ServiceProvider
             });
         }
 
-        Route::prefix('api')->middleware('api')->group(function () {
+        Route::prefix((string) config('image-editor.routes.prefix', 'api'))->group(function () {
             $this->loadRoutesFrom(__DIR__.'/../Routes/api.php');
         });
     }

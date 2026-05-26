@@ -447,7 +447,12 @@ Para embutir só o editor noutro contexto avançado, importe `Camera.vue` com `a
 | POST | `/api/image/edit` | Aplicar edições / guardar (`user_id` no body) |
 | DELETE | `/api/camera/photos` | Eliminar foto |
 
-Todas as rotas API usam o prefixo `/api` e middleware `api` (inclui QR code e callback).
+Todas as rotas API usam o prefixo `/api`. Por omissão:
+
+- rotas interativas do editor (`/api/camera/photos`, upload, edição, etc.) usam middleware `web`
+- o callback QR (`/api/camera/callback/files/{userId}`) usa middleware `api`
+
+Isto evita herdar `throttle:api` agressivo nas leituras normais da galeria. Pode ajustar em `config/image-editor.php` (`routes.browser_middleware`, `routes.callback_middleware`, `routes.prefix`).
 
 ### Web (opcional — demo ou host)
 
