@@ -22,6 +22,7 @@ class QrCodeService
 
         $apiUrl = config('image-editor.qr_code.api_url');
         $bearer = config('image-editor.qr_code.api_bearer_token');
+        $deliveryMode = (string) config('image-editor.qr_code.delivery_mode', 'callback_base64');
 
         if (! $apiUrl || ! $bearer) {
             return [
@@ -33,6 +34,7 @@ class QrCodeService
         $response = Http::withToken($bearer)->post($apiUrl, [
             'user_token' => $this->storage->sanitizeUserId($userId),
             'endpoint' => $this->storage->callbackUrl($userId),
+            'delivery_mode' => $deliveryMode,
         ]);
 
         if (! $response->successful()) {

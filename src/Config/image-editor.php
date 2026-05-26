@@ -15,6 +15,7 @@ return [
     'qr_code' => [
         'api_url' => env('QRCODE_URL'),
         'api_bearer_token' => env('QRCODE_API_TOKEN'),
+        'delivery_mode' => env('QRCODE_DELIVERY_MODE', 'callback_base64'),
     ],
 
     'text_font' => env('IMAGE_EDITOR_TEXT_FONT', env('CAMERA_TEXT_FONT')),

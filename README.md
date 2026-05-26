@@ -331,6 +331,7 @@ O pedido é `POST /api/camera/qrcode` com `{ user_id: ... }`. O pacote envia à 
 
 - `user_token` — ID sanitizado do utilizador
 - `endpoint` — URL absoluta de callback: `{APP_URL}/api/camera/callback/files/{userId}`
+- `delivery_mode` — por omissão `callback_base64` (configurável por `QRCODE_DELIVERY_MODE`)
 
 A API QR devolve o código (SVG ou imagem em base64). As fotos enviadas pelo telemóvel chegam ao callback e são guardadas em **`storage/app/public/photos/tmp/{userId}/`**. Cada utilizador só vê as suas imagens na galeria.
 
@@ -357,6 +358,7 @@ VITE_REVERB_SCHEME="${REVERB_SCHEME}"
 APP_URL=https://seu-dominio.test
 QRCODE_URL=https://api-qr.exemplo/qrcode
 QRCODE_API_TOKEN=seu-token
+QRCODE_DELIVERY_MODE=callback_base64
 IMAGE_EDITOR_BROADCASTING=true
 ```
 
