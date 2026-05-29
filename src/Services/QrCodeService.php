@@ -3,6 +3,7 @@
 namespace PDMFC\ImageEditor\Services;
 
 use Illuminate\Support\Facades\Http;
+use PDMFC\ImageEditor\Support\CallbackRoute;
 
 class QrCodeService
 {
@@ -27,6 +28,13 @@ class QrCodeService
         if (! $apiUrl || ! $bearer) {
             return [
                 'error' => 'Serviço de QR Code não configurado (QRCODE_URL, QRCODE_API_TOKEN).',
+                'status' => 500,
+            ];
+        }
+
+        if (! CallbackRoute::isConfigured()) {
+            return [
+                'error' => 'Callback QR não configurado (QRCODE_CALLBACK_URL).',
                 'status' => 500,
             ];
         }

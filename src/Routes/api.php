@@ -18,8 +18,3 @@ Route::middleware(config('image-editor.routes.browser_middleware', ['web']))->gr
     Route::post('/image/edit', [ImageController::class, 'edit'])->name('image-editor.edit');
     Route::post('/image/preview', [ImageController::class, 'preview'])->name('image-editor.preview');
 });
-
-Route::middleware(config('image-editor.routes.callback_middleware', ['api']))->group(function () {
-    Route::post('/camera/callback/files/{userId}', [CameraController::class, 'callbackFiles'])
-        ->name('image-editor.callback.files');
-});

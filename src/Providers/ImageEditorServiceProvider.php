@@ -5,11 +5,13 @@ namespace PDMFC\ImageEditor\Providers;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Inertia\Inertia;
+use PDMFC\ImageEditor\Http\Controllers\CameraController;
 use PDMFC\ImageEditor\Services\CameraService;
 use PDMFC\ImageEditor\Services\ImageService;
 use PDMFC\ImageEditor\Services\QrCodeService;
 use PDMFC\ImageEditor\Services\UserPhotoStorage;
 use PDMFC\ImageEditor\Support\ActionButtons;
+use PDMFC\ImageEditor\Support\CallbackRoute;
 
 class ImageEditorServiceProvider extends ServiceProvider
 {
@@ -54,6 +56,10 @@ class ImageEditorServiceProvider extends ServiceProvider
         Route::prefix((string) config('image-editor.routes.prefix', 'api'))->group(function () {
             $this->loadRoutesFrom(__DIR__.'/../Routes/api.php');
         });
+
+        Route::middleware(config('image-editor.routes.callback_middleware', ['api']))
+            ->post(CallbackRoute::routePath(), [CameraController::class, 'callbackFiles'])
+            ->name('image-editor.callback.files');
     }
 
     protected function normalizeActionButtonsConfig(): void

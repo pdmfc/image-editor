@@ -7,7 +7,8 @@ return [
     ],
 
     'routes' => [
-        'prefix' => 'api',
+        'prefix' => env('IMAGE_EDITOR_ROUTES_PREFIX', 'api'),
+        'callback_path' => env('IMAGE_EDITOR_CALLBACK_PATH'),
         'browser_middleware' => ['web'],
         'callback_middleware' => ['api'],
     ],
@@ -22,7 +23,7 @@ return [
         'api_url' => env('QRCODE_URL'),
         'api_bearer_token' => env('QRCODE_API_TOKEN'),
         'delivery_mode' => env('QRCODE_DELIVERY_MODE', 'callback_base64'),
-        // URL pública do callback (host do projeto). Se vazio, usa route() com APP_URL.
+        // URL base do callback (obrigatória para QR). O {userId} é acrescentado em código.
         'callback_url' => env('QRCODE_CALLBACK_URL'),
     ],
 

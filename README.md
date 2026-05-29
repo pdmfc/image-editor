@@ -421,18 +421,29 @@ APP_URL=https://seu-dominio.test
 QRCODE_URL=https://api-qr.exemplo/qrcode
 QRCODE_API_TOKEN=seu-token
 QRCODE_DELIVERY_MODE=callback_base64
-# URL pública do callback (recomendado em produção / túnel ngrok)
-QRCODE_CALLBACK_URL=https://seu-dominio-publico.test
+# URL absoluta do callback (obrigatória para QR). Defina host + path do projeto.
+QRCODE_CALLBACK_URL=https://seu-dominio-publico.test/api/camera/callback/files/{userId}
+# Path da rota POST (opcional; se vazio, extrai-se do path de QRCODE_CALLBACK_URL)
+# IMAGE_EDITOR_CALLBACK_PATH=api/camera/callback/files/{userId}
 IMAGE_EDITOR_BROADCASTING=true
 ```
 
-**`QRCODE_CALLBACK_URL`** (opcional): host ou URL completa do callback no **projeto host**. Se omitido, o `endpoint` é gerado com `APP_URL` + rota `/api/camera/callback/files/{userId}`.
+**Callback QR (por projeto, via `.env`):**
 
-| Valor | Resultado (`userId=1`) |
-|-------|-------------------------|
-| *(vazio)* | `{APP_URL}/api/camera/callback/files/1` |
-| `https://publico.exemplo` | `https://publico.exemplo/api/camera/callback/files/1` |
-| `https://publico.exemplo/api/camera/callback/files/{userId}` | URL exacta com placeholder |
+| Variável | Descrição |
+|----------|-----------|
+| `QRCODE_CALLBACK_URL` | URL **completa** enviada à API QR. Obrigatória para QR. Deve incluir `{userId}` ou `{user_id}`. |
+| `IMAGE_EDITOR_CALLBACK_PATH` | Path da rota `POST` no Laravel (opcional). Se omitido, usa o path de `QRCODE_CALLBACK_URL`. |
+| `IMAGE_EDITOR_ROUTES_PREFIX` | Prefixo das restantes rotas do editor (`qrcode`, `photos`, …). Default: `api`. |
+
+Exemplo com path customizado noutro projeto:
+
+```env
+QRCODE_CALLBACK_URL=https://app.cliente.com/webhooks/image-upload/{userId}
+IMAGE_EDITOR_CALLBACK_PATH=webhooks/image-upload/{userId}
+```
+
+O valor de `endpoint` enviado à API QR é exactamente `QRCODE_CALLBACK_URL` com o `{userId}` substituído. A rota Laravel regista-se no mesmo path (via `IMAGE_EDITOR_CALLBACK_PATH` ou extraído da URL).
 
 2. **`php artisan reverb:start`** (ou processo supervisor em produção).
 
@@ -461,7 +472,7 @@ Instalar no host: `npm install laravel-echo pusher-js`
 
 5. O componente `Camera.vue` subscreve automaticamente se `window.Echo` existir.
 
-Em desenvolvimento com telemóvel, use túnel (ngrok) em `QRCODE_CALLBACK_URL` (ou `APP_URL` se omitir) e confirme que o browser do editor alcança o Reverb (`REVERB_HOST` / portas).
+Em desenvolvimento com telemóvel, use túnel (ngrok) em `QRCODE_CALLBACK_URL` e confirme que o browser do editor alcança o Reverb (`REVERB_HOST` / portas).
 
 ### Props e eventos do `CameraFormModal`
 
@@ -514,7 +525,7 @@ Para embutir só o editor noutro contexto avançado, importe `Camera.vue` com `a
 | GET | `/api/camera/photos?user_id=` | Lista de fotos do utilizador |
 | POST | `/api/camera/upload` | Upload (`user_id` no body) |
 | POST | `/api/camera/capture` | Captura webcam |
-| POST | `/api/camera/callback/files/{userId}` | Callback QR (API externa, sem CSRF) |
+| POST | `{IMAGE_EDITOR_CALLBACK_PATH ou path de QRCODE_CALLBACK_URL}` | Callback QR (API externa, sem CSRF) |
 | POST | `/api/camera/qrcode` | Obter QR (`user_id` no body) |
 | POST | `/api/image/edit` | Aplicar edições / guardar (`user_id` no body) |
 | DELETE | `/api/camera/photos` | Eliminar foto |
@@ -522,9 +533,9 @@ Para embutir só o editor noutro contexto avançado, importe `Camera.vue` com `a
 Todas as rotas API usam o prefixo `/api`. Por omissão:
 
 - rotas interativas do editor (`/api/camera/photos`, upload, edição, etc.) usam middleware `web`
-- o callback QR (`/api/camera/callback/files/{userId}`) usa middleware `api`
+- o callback QR usa middleware `api` e o path definido em `QRCODE_CALLBACK_URL` / `IMAGE_EDITOR_CALLBACK_PATH`
 
-Isto evita herdar `throttle:api` agressivo nas leituras normais da galeria. Pode ajustar em `config/image-editor.php` (`routes.browser_middleware`, `routes.callback_middleware`, `routes.prefix`).
+Isto evita herdar `throttle:api` agressivo nas leituras normais da galeria. Pode ajustar em `config/image-editor.php` (`routes.browser_middleware`, `routes.callback_middleware`, `routes.prefix`, `routes.callback_path`).
 
 ### Web (opcional — demo ou host)
 
