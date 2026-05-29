@@ -92,8 +92,23 @@ class UserPhotoStorage
 
     public function callbackUrl(string|int $userId): string
     {
+        $userId = $this->sanitizeUserId($userId);
+        $configured = config('image-editor.qr_code.callback_url');
+
+        if (is_string($configured) && trim($configured) !== '') {
+            $configured = rtrim(trim($configured), '/');
+
+            if (str_contains($configured, '{userId}') || str_contains($configured, '{user_id}')) {
+                return str_replace(['{userId}', '{user_id}'], $userId, $configured);
+            }
+
+            $path = route('image-editor.callback.files', ['userId' => $userId], absolute: false);
+
+            return $configured.$path;
+        }
+
         return route('image-editor.callback.files', [
-            'userId' => $this->sanitizeUserId($userId),
+            'userId' => $userId,
         ], absolute: true);
     }
 }

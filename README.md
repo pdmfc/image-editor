@@ -392,7 +392,7 @@ defineProps({ userId: { type: [Number, String], required: true } })
 O pedido é `POST /api/camera/qrcode` com `{ user_id: ... }`. O pacote envia à API externa:
 
 - `user_token` — ID sanitizado do utilizador
-- `endpoint` — URL absoluta de callback: `{APP_URL}/api/camera/callback/files/{userId}`
+- `endpoint` — URL absoluta de callback enviada à API QR (ver `QRCODE_CALLBACK_URL` abaixo)
 - `delivery_mode` — por omissão `callback_base64` (configurável por `QRCODE_DELIVERY_MODE`)
 
 A API QR devolve o código (SVG ou imagem em base64). As fotos enviadas pelo telemóvel chegam ao callback e são guardadas em **`storage/app/public/photos/tmp/{userId}/`**. Cada utilizador só vê as suas imagens na galeria.
@@ -421,8 +421,18 @@ APP_URL=https://seu-dominio.test
 QRCODE_URL=https://api-qr.exemplo/qrcode
 QRCODE_API_TOKEN=seu-token
 QRCODE_DELIVERY_MODE=callback_base64
+# URL pública do callback (recomendado em produção / túnel ngrok)
+QRCODE_CALLBACK_URL=https://seu-dominio-publico.test
 IMAGE_EDITOR_BROADCASTING=true
 ```
+
+**`QRCODE_CALLBACK_URL`** (opcional): host ou URL completa do callback no **projeto host**. Se omitido, o `endpoint` é gerado com `APP_URL` + rota `/api/camera/callback/files/{userId}`.
+
+| Valor | Resultado (`userId=1`) |
+|-------|-------------------------|
+| *(vazio)* | `{APP_URL}/api/camera/callback/files/1` |
+| `https://publico.exemplo` | `https://publico.exemplo/api/camera/callback/files/1` |
+| `https://publico.exemplo/api/camera/callback/files/{userId}` | URL exacta com placeholder |
 
 2. **`php artisan reverb:start`** (ou processo supervisor em produção).
 
@@ -451,7 +461,7 @@ Instalar no host: `npm install laravel-echo pusher-js`
 
 5. O componente `Camera.vue` subscreve automaticamente se `window.Echo` existir.
 
-Em desenvolvimento com telemóvel, use túnel (ngrok) para `APP_URL` (callback QR) e confirme que o browser do editor alcança o Reverb (`REVERB_HOST` / portas).
+Em desenvolvimento com telemóvel, use túnel (ngrok) em `QRCODE_CALLBACK_URL` (ou `APP_URL` se omitir) e confirme que o browser do editor alcança o Reverb (`REVERB_HOST` / portas).
 
 ### Props e eventos do `CameraFormModal`
 
