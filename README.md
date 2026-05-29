@@ -232,6 +232,68 @@ Route::get('/meu-formulario', fn () => inertia('FormExample'))->name('form.examp
 
 ---
 
+## Laravel Nova (campo Vue embutido)
+
+O modal **`CameraFormModal`** pode ser usado em campos Nova / Raven **sem** `@inertiajs/vue3` no `package.json` do host. O pacote resolve os botões da toolbar por:
+
+1. prop `:action-buttons`
+2. `Nova.config('imageEditor').actionButtons`
+3. props Inertia partilhadas (apps Inertia puras)
+4. valores por defeito
+
+### PHP — `NovaServiceProvider`
+
+```php
+Nova::script('imageEditor', fn () => [
+    'actionButtons' => config('image-editor.action_buttons', []),
+]);
+```
+
+Ou passe `:action-buttons` directamente no componente Vue.
+
+### Vite do host
+
+```javascript
+{
+  find: '@image-editor',
+  replacement: path.resolve(__dirname, 'vendor/pdmfc/image-editor/src/Resources/js'),
+}
+```
+
+### Tailwind
+
+Inclua os ficheiros do pacote no `content` do Tailwind do host:
+
+```javascript
+'./vendor/pdmfc/image-editor/src/Resources/**/*.{js,vue,blade.php}',
+```
+
+### `userId`
+
+A prop **`user-id`** do modal é uma chave de armazenamento (`photos/tmp/{id}/`), **não** tem de ser `auth()->id()`. Pode ser o ID do registo (ex.: Fact, Processo), desde que use apenas `a-z`, `A-Z`, `0-9`, `_` e `-`.
+
+Exemplo com carregamento lazy do modal:
+
+```javascript
+import { defineAsyncComponent } from 'vue'
+
+const CameraFormModal = defineAsyncComponent(() =>
+  import('@image-editor/Components/CameraFormModal.vue')
+)
+```
+
+```vue
+<CameraFormModal
+  v-if="showEditor"
+  v-model:open="showEditor"
+  :user-id="storageId"
+  :action-buttons="actionButtons"
+  @use-in-form="onUseInForm"
+/>
+```
+
+---
+
 ## Utilização num formulário
 
 O fluxo recomendado separa **guardar no servidor** de **associar ao formulário**:

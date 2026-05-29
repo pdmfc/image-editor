@@ -236,15 +236,13 @@
 
 <script setup>
 import { ref, computed, onMounted, toRef } from 'vue'
-import { usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Notification from '../Components/Notification.vue'
 import ImageEditor from '../Components/ImageEditor.vue'
 import QRCodePopup from '../Components/QRCodePopup.vue'
 import CameraPopup from '../Components/CameraPopup.vue'
 import { useImageEditorRealtime } from '../composables/useImageEditorRealtime.js'
-
-const DEFAULT_ACTION_BUTTONS = ['upload', 'qrcode', 'camera', 'canvas']
+import { useImageEditorActionButtons } from '../composables/useImageEditorActionButtons.js'
 
 const props = defineProps({
   asModal: {
@@ -265,20 +263,9 @@ const props = defineProps({
   }
 })
 
-const page = usePage()
-
-const enabledActionButtons = computed(() => {
-  const list =
-    props.actionButtons ??
-    page.props.imageEditor?.actionButtons ??
-    DEFAULT_ACTION_BUTTONS
-
-  return new Set(
-    (Array.isArray(list) ? list : DEFAULT_ACTION_BUTTONS).map((key) =>
-      String(key).toLowerCase()
-    )
-  )
-})
+const enabledActionButtons = useImageEditorActionButtons(
+  toRef(props, 'actionButtons')
+)
 
 const isActionEnabled = (action) => enabledActionButtons.value.has(action)
 

@@ -7,11 +7,20 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@inertiajs/vue3": "^1.0.0",
     "axios": "^1.6.0",
     "vue": "^3.4.0"
   },
+  "peerDependencies": {
+    "@inertiajs/vue3": "^1.0.0",
+    "vue": "^3.4.0"
+  },
+  "peerDependenciesMeta": {
+    "@inertiajs/vue3": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@inertiajs/vue3": "^1.0.0",
     "@vitejs/plugin-vue": "^5.0.0",
     "autoprefixer": "^10.4.7",
     "postcss": "^8.4.14",
