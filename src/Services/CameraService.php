@@ -25,7 +25,7 @@ class CameraService
             $this->storage->ensureDirectory($userId);
             $dir = $this->storage->directory($userId);
             $files = Storage::disk($this->disk())->files($dir);
-            $photoGroups = [];
+            $photos = [];
 
             foreach ($files as $file) {
                 $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
@@ -35,22 +35,18 @@ class CameraService
                 }
 
                 $filename = basename($file);
-                $baseName = preg_replace('/_edited\.(jpg|jpeg|png|gif|webp)$/i', '', $filename);
                 $fullPath = $this->storage->storagePath($userId, $filename);
                 $timestamp = is_file($fullPath) ? filemtime($fullPath) : time();
 
-                if (! isset($photoGroups[$baseName]) || $timestamp > $photoGroups[$baseName]['timestamp']) {
-                    $photoGroups[$baseName] = [
-                        'filename' => $filename,
-                        'url' => $this->storage->photoUrl($userId, $filename),
-                        'path' => $file,
-                        'timestamp' => $timestamp,
-                        'is_blank_canvas' => str_starts_with($filename, 'canvas_'),
-                    ];
-                }
+                $photos[] = [
+                    'filename' => $filename,
+                    'url' => $this->storage->photoUrl($userId, $filename),
+                    'path' => $file,
+                    'timestamp' => $timestamp,
+                    'is_blank_canvas' => str_starts_with($filename, 'canvas_'),
+                ];
             }
 
-            $photos = array_values($photoGroups);
             usort($photos, fn (array $a, array $b): int => ($b['timestamp'] ?? 0) <=> ($a['timestamp'] ?? 0));
 
             return ['photos' => $photos];

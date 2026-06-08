@@ -1,8 +1,10 @@
 <template>
   <div
+    v-editor-tooltip-root
     class="flex overflow-hidden bg-gray-100"
     :class="asModal ? 'h-full min-h-0' : 'h-screen'"
   >
+    <EditorTooltipLayer />
     <div class="flex min-h-0 flex-1">
       <aside class="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white sm:w-64">
         <div class="flex flex-wrap justify-center gap-1.5 border-b border-gray-100 bg-gray-50/80 px-2 py-1.5">
@@ -93,14 +95,19 @@
             Nenhuma imagem. Carregue um ficheiro ou tire uma foto.
           </p>
           <ul v-else class="space-y-2">
-            <li v-for="photo in photos" :key="photo.filename">
+            <li
+              v-for="(photo, index) in photos"
+              :key="photo.path || `${photo.filename}-${photo.timestamp ?? index}`"
+            >
               <button
                 type="button"
                 class="group relative w-full overflow-hidden rounded-lg border-2 text-left transition"
                 :class="[
                   selectedPhoto?.filename === photo.filename
                     ? 'border-blue-500 ring-2 ring-blue-200'
-                    : 'border-transparent hover:border-gray-300',
+                    : photo.is_blank_canvas
+                      ? 'border-sky-400 hover:border-sky-500'
+                      : 'border-gray-200 hover:border-gray-300',
                   canDragPhotoToCanvas(photo) ? 'cursor-grab active:cursor-grabbing' : ''
                 ]"
                 :draggable="canDragPhotoToCanvas(photo)"
@@ -108,14 +115,25 @@
                 @dragstart="onThumbnailDragStart($event, photo)"
                 @dragend="onThumbnailDragEnd"
               >
-                <img
-                  :src="photo.url"
-                  :alt="photo.filename"
-                  class="aspect-[4/3] w-full object-cover bg-gray-100 pointer-events-none"
-                  :class="{ 'ring-1 ring-inset ring-sky-400/60': photo.is_blank_canvas }"
-                  loading="lazy"
-                  draggable="false"
-                />
+                <div
+                  class="relative aspect-[4/3] w-full overflow-hidden"
+                  :class="photo.is_blank_canvas ? 'thumbnail-checker' : 'bg-gray-100'"
+                >
+                  <img
+                    :src="photo.url"
+                    :alt="photo.filename"
+                    class="pointer-events-none h-full w-full object-cover"
+                    :class="{ 'ring-2 ring-inset ring-sky-400/80': photo.is_blank_canvas }"
+                    loading="lazy"
+                    draggable="false"
+                  />
+                </div>
+                <p
+                  class="truncate border-t border-gray-100 bg-gray-50 px-2 py-1 text-[10px] font-medium text-gray-600"
+                  :title="photo.filename"
+                >
+                  {{ photo.filename }}
+                </p>
                 <div
                   class="pointer-events-none absolute inset-x-0 top-0 flex justify-end gap-1 p-1.5 opacity-0 transition-opacity group-hover:opacity-100"
                 >
@@ -179,12 +197,14 @@
         <ImageEditor
           v-if="selectedPhoto"
           ref="imageEditorRef"
-          :key="selectedPhoto.filename"
+          :key="selectedPhotoEditorKey"
           embedded
           :user-id="userId"
           :image-url="selectedPhoto.url"
           :photo="selectedPhoto"
+          :show-use-in-form="asModal"
           @save="handleSaveEdit"
+          @use-in-form="usePhotoInForm"
           @error="(msg) => showNotification('error', 'Erro', msg)"
         />
         <div
@@ -238,7 +258,11 @@
 import { ref, computed, onMounted, toRef } from 'vue'
 import axios from 'axios'
 import Notification from '../Components/Notification.vue'
+import EditorTooltipLayer from '../Components/EditorTooltipLayer.vue'
 import ImageEditor from '../Components/ImageEditor.vue'
+import { editorTooltipRoot } from '../composables/editorTooltip.js'
+
+const vEditorTooltipRoot = editorTooltipRoot
 import QRCodePopup from '../Components/QRCodePopup.vue'
 import CameraPopup from '../Components/CameraPopup.vue'
 import { useImageEditorRealtime } from '../composables/useImageEditorRealtime.js'
@@ -399,13 +423,60 @@ const createBlankCanvas = async () => {
   }
 }
 
+const photoUrlWithCacheBust = (photo) => {
+  if (!photo?.url) {
+    return ''
+  }
+  const baseUrl = String(photo.url).split('?')[0]
+  const version =
+    photo.timestamp != null ? String(photo.timestamp) : String(Date.now())
+  return `${baseUrl}?v=${version}`
+}
+
+const withCacheBustedUrl = (photo) => {
+  if (!photo?.url) {
+    return photo
+  }
+  return { ...photo, url: photoUrlWithCacheBust(photo) }
+}
+
+const dedupePhotosByFilename = (list) => {
+  const byKey = new Map()
+  for (const photo of list) {
+    const key = photo?.path || photo?.filename
+    if (!key) {
+      continue
+    }
+    const previous = byKey.get(key)
+    if (!previous || (photo.timestamp ?? 0) >= (previous.timestamp ?? 0)) {
+      byKey.set(key, photo)
+    }
+  }
+  return [...byKey.values()].sort(
+    (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
+  )
+}
+
+const selectedPhotoEditorKey = computed(() => {
+  const photo = selectedPhoto.value
+  if (!photo) {
+    return ''
+  }
+  const version = photo.timestamp != null ? String(photo.timestamp) : '0'
+  const urlVersion = photo.url?.includes('?') ? photo.url.split('?')[1] : ''
+  return `${photo.filename}-${version}-${urlVersion}`
+})
+
+const normalizePhotosList = (list) =>
+  dedupePhotosByFilename((list ?? []).map((photo) => withCacheBustedUrl(photo)))
+
 const syncSelectedPhotoFromList = (filename) => {
   if (!filename) {
     selectedPhoto.value = null
     return
   }
   const found = photos.value.find((p) => p.filename === filename)
-  selectedPhoto.value = found || null
+  selectedPhoto.value = found ? withCacheBustedUrl(found) : null
 }
 
 const editorHasUnsavedChanges = () =>
@@ -432,6 +503,7 @@ const applyPhotoSelection = (photo) => {
     return true
   }
   if (selectedPhoto.value?.filename === photo.filename) {
+    selectedPhoto.value = withCacheBustedUrl(photo)
     return true
   }
   if (selectedPhoto.value && editorHasUnsavedChanges()) {
@@ -439,7 +511,7 @@ const applyPhotoSelection = (photo) => {
     showSwitchDiscardWarning()
     return false
   }
-  selectedPhoto.value = photo
+  selectedPhoto.value = withCacheBustedUrl(photo)
   pendingPhotoSwitch.value = null
   return true
 }
@@ -514,7 +586,7 @@ const loadPhotos = async (options = {}) => {
       throw new Error(response.data.error)
     }
 
-    photos.value = response.data.photos ?? []
+    photos.value = normalizePhotosList(response.data.photos)
 
     if (options.selectFilename) {
       const found = photos.value.find((p) => p.filename === options.selectFilename)
@@ -550,7 +622,7 @@ const handlePhotosUploadedFromMobile = async (payload) => {
   const newNames = new Set(payload?.new_filenames ?? [])
 
   if (Array.isArray(payload?.photos) && payload.photos.length > 0) {
-    photos.value = payload.photos
+    photos.value = normalizePhotosList(payload.photos)
   } else {
     await loadPhotos({ silent: true, autoSelectFirst: false })
   }
@@ -692,16 +764,6 @@ const handleDuplicate = async (photo) => {
   }
 }
 
-const photoUrlWithCacheBust = (photo) => {
-  if (!photo?.url) {
-    return ''
-  }
-  const version =
-    photo.timestamp != null ? String(photo.timestamp) : String(Date.now())
-  const sep = photo.url.includes('?') ? '&' : '?'
-  return `${photo.url}${sep}v=${version}`
-}
-
 const usePhotoInForm = async (photo) => {
   if (!photo?.filename || !photo?.url) {
     showNotification('error', 'Erro', 'Imagem inválida')
@@ -737,6 +799,25 @@ const handleSaveEdit = async (payload) => {
     })
     const fn = keepFilename || selectedPhoto.value?.filename
     const photo = fn ? photos.value.find((p) => p.filename === fn) : selectedPhoto.value
+    const useInForm = Boolean(payload && typeof payload === 'object' && payload.useInForm)
+
+    if (photo && useInForm) {
+      emit('useInForm', {
+        filename: photo.filename,
+        url: photoUrlWithCacheBust(photo),
+        is_blank_canvas: Boolean(photo.is_blank_canvas)
+      })
+      const isCopy = payload?.saveMode === 'copy'
+      showNotification(
+        'success',
+        'Formulário',
+        isCopy
+          ? 'Nova imagem criada e pronta para usar no formulário. O original mantém-se na lista.'
+          : 'Imagem guardada e pronta para usar no formulário'
+      )
+      return
+    }
+
     if (photo && !props.asModal) {
       emit('saved', {
         filename: photo.filename,
@@ -782,5 +863,16 @@ onMounted(() => {
 
 .toolbar-icon-svg {
   @apply h-[18px] w-[18px];
+}
+
+.thumbnail-checker {
+  background-color: #f3f4f6;
+  background-image:
+    linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+    linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
 }
 </style>

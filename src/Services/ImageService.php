@@ -140,18 +140,7 @@ class ImageService
                         if (! is_array($text) || ! isset($text['content'])) {
                             continue;
                         }
-                        $content = trim((string) $text['content']);
-                        if ($content === '') {
-                            continue;
-                        }
-                        $image->text(
-                            $content,
-                            (int) ($text['x'] ?? 0),
-                            (int) ($text['y'] ?? 0),
-                            function (FontFactory $font) use ($text, $image): void {
-                                $this->configureTextFont($font, $text, $image);
-                            }
-                        );
+                        $this->applyTextItem($image, $text);
                     }
                 }
 
@@ -915,6 +904,69 @@ class ImageService
                 continue;
             }
         }
+    }
+
+    private function applyTextItem(ImageInterface $image, array $text): void
+    {
+        $content = trim((string) ($text['content'] ?? ''));
+        if ($content === '') {
+            return;
+        }
+
+        $x = (int) ($text['x'] ?? 0);
+        $y = (int) ($text['y'] ?? 0);
+        $bgColor = $text['background_color'] ?? null;
+
+        if (is_string($bgColor) && $bgColor !== '') {
+            $this->drawTextBackground($image, $text, $content, $x, $y, $bgColor);
+        }
+
+        $image->text(
+            $content,
+            $x,
+            $y,
+            function (FontFactory $font) use ($text, $image): void {
+                $this->configureTextFont($font, $text, $image);
+            }
+        );
+    }
+
+    private function drawTextBackground(
+        ImageInterface $image,
+        array $text,
+        string $content,
+        int $x,
+        int $y,
+        string $bgColor
+    ): void {
+        $renderSize = $this->fontSizeForTextRendering($image, (float) ($text['size'] ?? 24));
+        $box = $this->estimateTextBox($content, $renderSize);
+        $padding = max(0, min(48, (int) ($text['background_padding'] ?? 6)));
+        $opacity = max(5, min(100, (int) ($text['background_opacity'] ?? 75)));
+
+        $align = (string) ($text['align'] ?? 'left');
+        $bx = $x;
+        if ($align === 'center') {
+            $bx = $x - (int) ($box['width'] / 2);
+        } elseif ($align === 'right') {
+            $bx = $x - $box['width'];
+        }
+
+        $rectX = max(0, $bx - $padding);
+        $rectY = max(0, $y - $padding);
+        $rectW = min($image->width() - $rectX, $box['width'] + (2 * $padding));
+        $rectH = min($image->height() - $rectY, $box['height'] + (2 * $padding));
+
+        if ($rectW < 1 || $rectH < 1) {
+            return;
+        }
+
+        $fill = $this->colorWithOpacity($bgColor, $opacity);
+
+        $image->drawRectangle(function ($r) use ($rectX, $rectY, $rectW, $rectH, $fill): void {
+            $r->size($rectW, $rectH)->at($rectX, $rectY);
+            $r->background($fill);
+        });
     }
 
     private function configureTextFont(FontFactory $font, array $text, ImageInterface $image): void

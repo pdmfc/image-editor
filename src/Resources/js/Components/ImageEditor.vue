@@ -17,7 +17,7 @@
     </button>
 
     <!-- Botões de Ação -->
-    <div class="absolute top-4 left-4 z-50 flex max-w-[min(22rem,calc(100vw-6rem))] flex-col gap-2">
+    <div class="absolute top-4 left-4 z-50 flex max-w-[min(28rem,calc(100vw-4rem))] flex-col gap-2">
       <div class="flex space-x-2">
         <button
           type="button"
@@ -42,12 +42,13 @@
           </svg>
         </button>
       </div>
-      <div v-if="hasChanges" class="flex space-x-2">
+      <div class="flex space-x-2">
         <button
           type="button"
           title="Repor todas as edições (voltar ao original)"
+          :disabled="!hasChanges"
           @click="resetFilters"
-          class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
+          class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white disabled:opacity-35 disabled:pointer-events-none"
         >
           <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -56,12 +57,31 @@
         <button
           type="button"
           title="Guardar imagem"
-          class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
-          :class="{ 'bg-opacity-75 ring-2 ring-white/60': showSavePanel }"
+          class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white disabled:opacity-35 disabled:pointer-events-none"
+          :class="{ 'bg-opacity-75 ring-2 ring-white/60': showSavePanel && hasChanges }"
+          :disabled="!hasChanges || isSaving"
           @click="toggleSavePanel"
         >
           <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
+        </button>
+        <button
+          v-if="showUseInForm"
+          type="button"
+          title="Usar no formulário"
+          class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white disabled:opacity-35 disabled:pointer-events-none"
+          :class="{ 'bg-opacity-75 ring-2 ring-white/60': showUseInFormWarning }"
+          :disabled="isSaving"
+          @click="requestUseInForm"
+        >
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
           </svg>
         </button>
       </div>
@@ -127,6 +147,69 @@
             @click="confirmSave"
           >
             {{ isSaving ? 'A guardar…' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+      <div
+        v-if="showUseInFormWarning"
+        class="w-[min(18rem,calc(100vw-5rem))] rounded-lg border border-amber-400/30 bg-black/85 px-3 py-2 text-xs text-white shadow-xl backdrop-blur-sm"
+      >
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <p class="font-medium text-amber-200">Alterações por guardar</p>
+          <button
+            type="button"
+            title="Fechar"
+            class="rounded p-0.5 text-white/70 hover:bg-white/10 hover:text-white"
+            @click="closeUseInFormWarning"
+          >
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <p class="text-white/80">
+          Guarde primeiro para o formulário receber a versão actual, ou use o ficheiro já guardado no disco.
+        </p>
+        <div class="mt-3 border-t border-white/15 pt-2">
+          <p class="mb-1 font-medium text-white/90">Ao guardar</p>
+          <label class="flex cursor-pointer items-start gap-2 py-0.5">
+            <input v-model="saveMode" type="radio" value="overwrite" class="mt-0.5 shrink-0" />
+            <span>Substituir o ficheiro original</span>
+          </label>
+          <label class="flex cursor-pointer items-start gap-2 py-0.5">
+            <input v-model="saveMode" type="radio" value="copy" class="mt-0.5 shrink-0" />
+            <span>Manter o original e criar uma nova imagem</span>
+          </label>
+        </div>
+        <div class="mt-3 flex flex-col gap-2">
+          <button
+            type="button"
+            class="rounded-lg bg-emerald-600 px-2 py-1.5 font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+            :disabled="isSaving"
+            @click="saveAndUseInForm"
+          >
+            {{
+              isSaving
+                ? 'A guardar…'
+                : saveMode === 'copy'
+                  ? 'Criar nova imagem e usar no formulário'
+                  : 'Guardar e usar no formulário'
+            }}
+          </button>
+          <button
+            type="button"
+            class="rounded-lg bg-white/10 px-2 py-1.5 text-white/90 hover:bg-white/20"
+            :disabled="isSaving"
+            @click="useInFormWithoutSaving"
+          >
+            Usar sem guardar alterações
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-2 py-1.5 text-white/70 hover:bg-white/10 hover:text-white"
+            @click="closeUseInFormWarning"
+          >
+            Cancelar
           </button>
         </div>
       </div>
@@ -615,13 +698,13 @@
             @click.stop="removeImageOverlay(ov.id)"
           >×</button>
         </div>
-        <!-- Desenhos guardados por cima das fotos (folha em composição; evita esconder imagens no preview) -->
+        <!-- Desenhos guardados por cima da imagem (camada vectorial até guardar) -->
         <svg
-          v-if="showCollageDrawingsOverlay"
+          v-if="showDrawingsOverlay"
           class="pointer-events-none absolute inset-0 z-[27] h-full w-full overflow-visible"
           xmlns="http://www.w3.org/2000/svg"
         >
-          <template v-for="(shape, idx) in collageDrawingShapes" :key="'collage-draw-' + idx">
+          <template v-for="(shape, idx) in drawingOverlayShapes" :key="'draw-overlay-' + idx">
             <line
               v-if="shape.kind === 'line'"
               :x1="shape.x1"
@@ -726,7 +809,7 @@
             :key="'draw-hit-' + box.index"
             class="pointer-events-auto absolute touch-none rounded-sm border transition-colors"
             :class="
-              movingDrawingIndex === box.index
+              movingDrawingIndex === box.index || selectedDrawingIndex === box.index
                 ? 'cursor-move border-sky-300/45 bg-sky-400/[0.04]'
                 : 'cursor-move border-transparent hover:border-sky-300/25'
             "
@@ -1116,6 +1199,9 @@
                   </div>
                 </div>
                 <p v-if="drawingTool === 'bezier'" class="text-center text-amber-200/90">4 pontos (curva cúbica)</p>
+                <p v-if="drawings.length && (drawingTool || showDrawingMenu)" class="text-center text-emerald-200/90">
+                  Feche o Desenho para mover os traços na foto.
+                </p>
               </div>
             </div>
           </div>
@@ -1314,6 +1400,26 @@
                   <input v-model.number="textStrokeWidth" type="range" min="1" max="8" class="flex-1 accent-white" @input="onTextPanelInput" />
                 </div>
               </div>
+              <div class="rounded-lg border border-white/15 bg-white/5 p-2">
+                <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
+                  <input v-model="textBgEnabled" type="checkbox" class="rounded" @change="onTextPanelInput" />
+                  Fundo
+                </label>
+                <div v-if="textBgEnabled" class="mt-2 space-y-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-white/70">Cor</span>
+                    <input v-model="textBgColor" type="color" class="h-6 w-8 border-0 bg-transparent" @input="onTextPanelInput" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-white/70">Opacidade: {{ textBgOpacity }}%</label>
+                    <input v-model.number="textBgOpacity" type="range" min="10" max="100" class="w-full accent-white" @input="onTextPanelInput" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-white/70">Margem: {{ textBgPadding }}px</label>
+                    <input v-model.number="textBgPadding" type="range" min="0" max="24" class="w-full accent-white" @input="onTextPanelInput" />
+                  </div>
+                </div>
+              </div>
               <div v-if="selectedTextIndex !== null" class="flex gap-2">
                 <button type="button" class="flex-1 rounded-lg bg-white/15 py-2 text-xs text-white" @click="duplicateSelectedText">Duplicar</button>
                 <button type="button" class="flex-1 rounded-lg bg-red-900/60 py-2 text-xs text-white" @click="removeText(selectedTextIndex)">Apagar</button>
@@ -1488,7 +1594,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import axios from 'axios'
-
 const props = defineProps({
   imageUrl: {
     type: String,
@@ -1505,10 +1610,14 @@ const props = defineProps({
   userId: {
     type: [String, Number],
     default: null
+  },
+  showUseInForm: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['close', 'save', 'error'])
+const emit = defineEmits(['close', 'save', 'error', 'useInForm'])
 
 const isBlankCanvas = computed(() => Boolean(props.photo?.is_blank_canvas))
 const showBlankCanvasHint = ref(false)
@@ -1548,10 +1657,11 @@ const contrast = ref(0)
 const saturation = ref(0)
 const gamma = ref(0)
 const gammaFine = ref(0)
-const saveMode = ref('overwrite')
+const saveMode = ref(props.showUseInForm ? 'copy' : 'overwrite')
 const saveFormat = ref('jpeg')
 const saveQuality = ref(85)
 const showSavePanel = ref(false)
+const showUseInFormWarning = ref(false)
 const isSaving = ref(false)
 const blur = ref(0)
 const pixelate = ref(0)
@@ -1587,8 +1697,8 @@ const isCollageComposition = computed(
   () => isBlankCanvas.value && imageOverlays.value.length > 0
 )
 
-const showCollageDrawingsOverlay = computed(
-  () => isCollageComposition.value && drawings.value.length > 0
+const showDrawingsOverlay = computed(
+  () => drawings.value.length > 0 && !zoomLayout.value
 )
 
 /** Camada por cima da composição enquanto uma ferramenta de desenho está selecionada. */
@@ -1610,13 +1720,13 @@ const canMoveImageOverlays = computed(
   () => imageOverlays.value.length > 0 && !drawingTool.value && !showDrawingMenu.value
 )
 
-/** Desenhos arrastáveis na folha em composição (fora do modo Desenho). */
+/** Desenhos arrastáveis sobre a imagem (fora do modo Desenho). */
 const canMoveDrawings = computed(
   () =>
-    isCollageComposition.value &&
     drawings.value.length > 0 &&
     !drawingTool.value &&
-    !showDrawingMenu.value
+    !showDrawingMenu.value &&
+    !zoomLayout.value
 )
 
 const selectedDrawingIndex = ref(null)
@@ -1815,6 +1925,10 @@ const textAlignOptions = [
 const textStrokeEnabled = ref(false)
 const textStrokeWidth = ref(2)
 const textStrokeColor = ref('#000000')
+const textBgEnabled = ref(false)
+const textBgColor = ref('#000000')
+const textBgOpacity = ref(75)
+const textBgPadding = ref(6)
 const selectedTextIndex = ref(null)
 const textPosition = ref({ x: 0, y: 0 })
 const texts = ref([])
@@ -1926,6 +2040,14 @@ const scheduleApplyChanges = () => {
     previewDebounceTimer = null
     void applyChanges()
   }, PREVIEW_DEBOUNCE_MS)
+}
+
+const finishVectorDrawingEdit = () => {
+  nextTick(() => recordEditHistory())
+}
+
+const bakeDrawingsIntoPreview = async () => {
+  await applyChanges({ bakeDrawings: true })
 }
 
 const flushPreview = (options = {}) => {
@@ -2138,9 +2260,17 @@ const redoEdit = async () => {
   flushPreview({ skipHistoryRecord: true })
 }
 
-const onHistoryKeyDown = (e) => {
-  const tag = e.target?.tagName
+const isFormFieldTarget = (target) => {
+  const tag = target?.tagName
   if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') {
+    return true
+  }
+
+  return Boolean(target?.isContentEditable)
+}
+
+const onHistoryKeyDown = (e) => {
+  if (isFormFieldTarget(e.target)) {
     return
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -4474,9 +4604,6 @@ const deleteFocusedDrawing = () => {
   stopDrawingMove()
   drawings.value.splice(idx, 1)
   selectedDrawingIndex.value = null
-  if (!isCollageComposition.value) {
-    scheduleApplyChanges()
-  }
   recordEditHistory()
   return true
 }
@@ -4529,9 +4656,9 @@ const startDrawingMove = (e, index) => {
   window.addEventListener('touchend', stopDrawingMove)
 }
 
-const collageDrawingShapes = computed(() => {
+const drawingOverlayShapes = computed(() => {
   void imageNaturalVersion.value
-  if (!isCollageComposition.value) {
+  if (!showDrawingsOverlay.value) {
     return []
   }
   const scale = displayStrokeScale.value
@@ -4704,7 +4831,10 @@ const buildTextItemFromPanel = (content, x, y) => ({
   angle: textAngle.value,
   align: textAlign.value,
   stroke_width: textStrokeEnabled.value ? Math.max(1, textStrokeWidth.value) : 0,
-  stroke_color: textStrokeEnabled.value ? textStrokeColor.value : null
+  stroke_color: textStrokeEnabled.value ? textStrokeColor.value : null,
+  background_color: textBgEnabled.value ? textBgColor.value : null,
+  background_opacity: textBgEnabled.value ? textBgOpacity.value : null,
+  background_padding: textBgEnabled.value ? displayTextPaddingToNatural(textBgPadding.value) : 0
 })
 
 const loadTextSettingsFromItem = (t) => {
@@ -4717,6 +4847,10 @@ const loadTextSettingsFromItem = (t) => {
   textStrokeEnabled.value = (t.stroke_width ?? 0) > 0
   textStrokeWidth.value = t.stroke_width > 0 ? t.stroke_width : 2
   textStrokeColor.value = t.stroke_color || '#000000'
+  textBgEnabled.value = Boolean(t.background_color)
+  textBgColor.value = t.background_color || '#000000'
+  textBgOpacity.value = t.background_opacity ?? 75
+  textBgPadding.value = t.background_padding ? naturalTextPaddingToDisplay(t.background_padding) : 6
 }
 
 const syncSelectedTextFromPanel = () => {
@@ -4757,6 +4891,18 @@ const textItemOuterStyle = (text) => {
   return { left: `${lay.left}px`, top: `${lay.top}px` }
 }
 
+const hexToRgba = (hex, alpha) => {
+  const normalized = String(hex || '#000000').replace('#', '')
+  if (normalized.length !== 6) {
+    return hex
+  }
+  const r = parseInt(normalized.slice(0, 2), 16)
+  const g = parseInt(normalized.slice(2, 4), 16)
+  const b = parseInt(normalized.slice(4, 6), 16)
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 const textItemInnerStyle = (text) => {
   const lay = naturalTextToDisplayLayout(text)
   const style = {
@@ -4772,6 +4918,14 @@ const textItemInnerStyle = (text) => {
     style.display = 'inline-block'
     style.transform = `rotate(${angle}deg)`
     style.transformOrigin = 'top left'
+  }
+  if (text.background_color) {
+    const padNat = text.background_padding ?? 0
+    const padDisp = padNat > 0 ? naturalTextPaddingToDisplay(padNat) : 0
+    style.display = 'inline-block'
+    style.backgroundColor = hexToRgba(text.background_color, (text.background_opacity ?? 75) / 100)
+    style.padding = `${padDisp}px`
+    style.borderRadius = `${Math.max(2, padDisp * 0.35)}px`
   }
   const sw = text.stroke_width ?? 0
   if (sw > 0 && text.stroke_color) {
@@ -4792,6 +4946,10 @@ const displayTextSizeToNatural = (displayPx) => {
   const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
   return Math.max(1, Math.round(displayPx / scale))
 }
+
+const displayTextPaddingToNatural = (displayPx) => displayTextSizeToNatural(displayPx)
+
+const naturalTextPaddingToDisplay = (naturalPx) => naturalTextSizeToDisplay(naturalPx)
 
 const naturalTextSizeToDisplay = (naturalPx) => {
   void imageNaturalVersion.value
@@ -5696,10 +5854,11 @@ const onViewportTouchEnd = (e) => {
 }
 
 const onSpaceKeyDown = (e) => {
-  if (e.code === 'Space' && !e.repeat) {
-    spaceKeyDown.value = true
-    e.preventDefault()
+  if (e.code !== 'Space' || e.repeat || isFormFieldTarget(e.target)) {
+    return
   }
+  spaceKeyDown.value = true
+  e.preventDefault()
 }
 
 const onSpaceKeyUp = (e) => {
@@ -5808,8 +5967,7 @@ const onPenStrokeEnd = () => {
     points: nat.map((p) => ({ x: p.x, y: p.y })),
     ...drawingStylePayload()
   })
-  scheduleApplyChanges()
-  nextTick(() => recordEditHistory())
+  finishVectorDrawingEdit()
 }
 
 const closeDrawingPanel = () => {
@@ -6005,12 +6163,12 @@ const clearDrawings = () => {
   drawings.value = []
   pathDraftPoints.value = []
   pathDraftHoverPos.value = null
-  scheduleApplyChanges()
+  recordEditHistory()
 }
 
 const undoLastDrawing = () => {
   drawings.value.pop()
-  scheduleApplyChanges()
+  recordEditHistory()
 }
 
 const commitPolygonFromPath = () => {
@@ -6025,7 +6183,7 @@ const commitPolygonFromPath = () => {
     points: pts.map((p) => ({ x: p.x, y: p.y })),
     ...drawingStylePayload()
   })
-  scheduleApplyChanges()
+  finishVectorDrawingEdit()
 }
 
 const commitBezierFromPath = () => {
@@ -6040,7 +6198,7 @@ const commitBezierFromPath = () => {
     points: pts.map((p) => ({ x: p.x, y: p.y })),
     ...drawingStylePayload()
   })
-  scheduleApplyChanges()
+  finishVectorDrawingEdit()
 }
 
 const clearPathDraft = () => {
@@ -6086,8 +6244,7 @@ const onWindowDrawEnd = () => {
       strokeColor: drawStrokeColor.value,
       strokeWidth: drawStrokeWidth.value
     })
-    scheduleApplyChanges()
-    nextTick(() => recordEditHistory())
+    finishVectorDrawingEdit()
     return
   }
   const r = displayRectToNatural(left, top, w, h)
@@ -6122,8 +6279,7 @@ const onWindowDrawEnd = () => {
       ...drawingStylePayload()
     })
   }
-  scheduleApplyChanges()
-  nextTick(() => recordEditHistory())
+  finishVectorDrawingEdit()
 }
 
 const onImageContextMenu = (e) => {
@@ -6208,16 +6364,14 @@ const onImageMouseDown = (e) => {
   if (t === 'pixel') {
     const p = displayPointToNatural(pos.x, pos.y)
     drawings.value.push({ type: 'pixel', x: p.x, y: p.y, color: drawStrokeColor.value })
-    scheduleApplyChanges()
-    nextTick(() => recordEditHistory())
+    void bakeDrawingsIntoPreview()
     return
   }
   if (t === 'fill') {
     const p = displayPointToNatural(pos.x, pos.y)
     const col = drawFillEnabled.value && drawFillColor.value ? drawFillColor.value : drawStrokeColor.value
     drawings.value.push({ type: 'fill', x: p.x, y: p.y, color: col })
-    scheduleApplyChanges()
-    nextTick(() => recordEditHistory())
+    void bakeDrawingsIntoPreview()
     return
   }
   if (t === 'pen') {
@@ -6296,7 +6450,7 @@ const buildEditPayload = (options = {}) => {
     crop: cropPayload,
     texts: texts.value,
     drawings:
-      options.includeSaveFields || !isCollageComposition.value ? drawings.value : [],
+      options.includeSaveFields || options.bakeDrawings ? drawings.value : [],
     image_overlays: options.includeSaveFields
       ? imageOverlays.value.map(({ src, x, y, width, height }) => ({
           src,
@@ -6336,6 +6490,10 @@ const applyChanges = async (options = {}) => {
 
     if (response.data.success) {
       currentImageUrl.value = response.data.image_data
+      if (options.bakeDrawings) {
+        drawings.value = []
+        selectedDrawingIndex.value = null
+      }
       if (showCrop.value) {
         scheduleCropDisplaySync()
       }
@@ -6376,13 +6534,8 @@ const applyChanges = async (options = {}) => {
   }
 }
 
-const resetFilters = () => {
-  clearPreviewDebounceTimer()
-  clearPixelateBrushPreviewDebounce()
-  clearBlurBrushPreviewDebounce()
-  cancelBlurPanPreviewRaf()
-  cancelPixelatePanPreviewRaf()
-  cancelCropPanPreviewRaf()
+/** Repõe camadas e ajustes depois de gravar (já incorporados no ficheiro). */
+const syncStateAfterSave = (url) => {
   stopBlurPan()
   stopPixelatePan()
   stopBlurBrushStroke()
@@ -6390,14 +6543,9 @@ const resetFilters = () => {
   stopCropPan()
   stopOverlayMove()
   stopOverlayResize()
-  window.removeEventListener('mousemove', onWindowDrawMove)
-  window.removeEventListener('mouseup', onWindowDrawEnd)
-  window.removeEventListener('touchmove', onWindowDrawMove)
-  window.removeEventListener('touchend', onWindowDrawEnd)
+  stopDrawingMove()
   stopPenStroke()
-  stopViewPan()
-  resetViewTransform()
-  viewPanHandMode.value = false
+  stopMovingText()
   brightness.value = 0
   contrast.value = 0
   saturation.value = 0
@@ -6444,23 +6592,58 @@ const resetFilters = () => {
   showBlurMenu.value = false
   showFilterMenu.value = false
   activeFilterPreset.value = null
+  activeControl.value = null
   clearZoomDetailState()
   texts.value = []
   selectedTextIndex.value = null
+  textContent.value = ''
   textBold.value = false
   textAngle.value = 0
   textAlign.value = 'left'
   textStrokeEnabled.value = false
   textStrokeWidth.value = 2
   textStrokeColor.value = '#000000'
+  textBgEnabled.value = false
+  textBgColor.value = '#000000'
+  textBgOpacity.value = 75
+  textBgPadding.value = 6
   imageOverlays.value = []
   watermarkApplied.value = null
   watermarkDraft.value = null
-  saveMode.value = 'overwrite'
+  showSavePanel.value = false
+  resetViewTransform()
+
+  if (typeof url === 'string' && url !== '') {
+    currentImageUrl.value = url
+    originalImageUrl.value = url
+  }
+
+  nextTick(() => {
+    syncImageNaturalMetrics()
+    resetEditHistoryStack(captureEditSnapshot())
+    editHistoryReady.value = true
+  })
+}
+
+const resetFilters = () => {
+  clearPreviewDebounceTimer()
+  clearPixelateBrushPreviewDebounce()
+  clearBlurBrushPreviewDebounce()
+  cancelBlurPanPreviewRaf()
+  cancelPixelatePanPreviewRaf()
+  cancelCropPanPreviewRaf()
+  window.removeEventListener('mousemove', onWindowDrawMove)
+  window.removeEventListener('mouseup', onWindowDrawEnd)
+  window.removeEventListener('touchmove', onWindowDrawMove)
+  window.removeEventListener('touchend', onWindowDrawEnd)
+  stopViewPan()
+  resetViewTransform()
+  viewPanHandMode.value = false
+  saveMode.value = props.showUseInForm ? 'copy' : 'overwrite'
   saveFormat.value = 'jpeg'
   saveQuality.value = 85
-  showSavePanel.value = false
   editHistoryReady.value = false
+  syncStateAfterSave(props.imageUrl)
   applyChanges({ resetHistory: true })
 }
 
@@ -6468,8 +6651,56 @@ const closeSavePanel = () => {
   showSavePanel.value = false
 }
 
+const closeUseInFormWarning = () => {
+  showUseInFormWarning.value = false
+}
+
+const emitUseInForm = () => {
+  if (!props.photo?.filename) {
+    emit('error', 'Imagem inválida')
+    return
+  }
+  emit('useInForm', {
+    filename: props.photo.filename,
+    url: props.imageUrl,
+    is_blank_canvas: Boolean(props.photo.is_blank_canvas)
+  })
+}
+
+const requestUseInForm = () => {
+  if (hasChanges.value) {
+    showUseInFormWarning.value = true
+    showSavePanel.value = false
+    return
+  }
+  emitUseInForm()
+}
+
+const useInFormWithoutSaving = () => {
+  closeUseInFormWarning()
+  emitUseInForm()
+}
+
+const saveAndUseInForm = async () => {
+  if (isSaving.value) {
+    return
+  }
+  if (!hasChanges.value) {
+    closeUseInFormWarning()
+    emitUseInForm()
+    return
+  }
+  const saved = await saveImage({ useInForm: true })
+  if (saved) {
+    closeUseInFormWarning()
+  }
+}
+
 const toggleSavePanel = () => {
   showSavePanel.value = !showSavePanel.value
+  if (showSavePanel.value) {
+    showUseInFormWarning.value = false
+  }
 }
 
 const confirmSave = async () => {
@@ -6479,9 +6710,13 @@ const confirmSave = async () => {
   await saveImage()
 }
 
-const saveImage = async () => {
+const saveImage = async (options = {}) => {
     clearPreviewDebounceTimer()
+    previewRequestId++
+    previewPending = false
+    previewPendingOptions = null
     isSaving.value = true
+    let saved = null
     try {
         const response = await axios.post(
           '/api/image/edit',
@@ -6489,11 +6724,15 @@ const saveImage = async () => {
         )
 
         if (response.data.success) {
-            showSavePanel.value = false
-            emit('save', {
+            syncStateAfterSave(response.data.url)
+            saved = {
               filename: response.data.image_url,
               url: response.data.url,
               saveMode: response.data.save_mode || saveMode.value
+            }
+            emit('save', {
+              ...saved,
+              useInForm: Boolean(options.useInForm)
             })
         } else {
             throw new Error(response.data.message || 'Erro ao salvar imagem')
@@ -6504,6 +6743,7 @@ const saveImage = async () => {
     } finally {
         isSaving.value = false
     }
+    return saved
 }
 
 const hasChanges = computed(() => {
@@ -6536,6 +6776,7 @@ const hasChanges = computed(() => {
 watch(hasChanges, (changed) => {
   if (!changed) {
     showSavePanel.value = false
+    showUseInFormWarning.value = false
   }
 })
 
@@ -6603,14 +6844,38 @@ const onImageTouchStartUnified = (e) => {
 }
 
 watch(
-  () => props.imageUrl,
-  () => {
+  () => props.photo?.filename,
+  (filename, previousFilename) => {
+    if (!filename || !props.imageUrl) {
+      return
+    }
+    if (previousFilename !== undefined && filename === previousFilename) {
+      return
+    }
+    currentImageUrl.value = props.imageUrl
+    originalImageUrl.value = props.imageUrl
+    resetViewTransform()
     editHistoryReady.value = false
     editHistoryIndex.value = -1
     editHistory.value = []
     nextTick(() => bootstrapEditHistory())
   },
   { immediate: true }
+)
+
+watch(
+  () => props.imageUrl,
+  (url, previousUrl) => {
+    if (!url || previousUrl === undefined || url === previousUrl) {
+      return
+    }
+    if (props.photo?.filename) {
+      currentImageUrl.value = url
+      originalImageUrl.value = url
+      resetViewTransform()
+      nextTick(() => syncImageNaturalMetrics())
+    }
+  }
 )
 
 onMounted(() => {
