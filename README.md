@@ -435,6 +435,7 @@ IMAGE_EDITOR_BROADCASTING=true
 | `QRCODE_CALLBACK_URL` | URL **completa** enviada à API QR. Obrigatória para QR. Deve incluir `{userId}` ou `{user_id}`. |
 | `IMAGE_EDITOR_CALLBACK_PATH` | Path da rota `POST` no Laravel (opcional). Se omitido, usa o path de `QRCODE_CALLBACK_URL`. |
 | `IMAGE_EDITOR_ROUTES_PREFIX` | Prefixo das restantes rotas do editor (`qrcode`, `photos`, …). Default: `api`. |
+| `IMAGE_EDITOR_CALLBACK_MIDDLEWARE` | Middleware do callback QR (lista separada por vírgulas). Default: `api`. Ex.: `api,auth.header` no host. |
 
 Exemplo com path customizado noutro projeto:
 
@@ -535,7 +536,7 @@ Todas as rotas API usam o prefixo `/api`. Por omissão:
 - rotas interativas do editor (`/api/camera/photos`, upload, edição, etc.) usam middleware `web`
 - o callback QR usa middleware `api` e o path definido em `QRCODE_CALLBACK_URL` / `IMAGE_EDITOR_CALLBACK_PATH`
 
-Isto evita herdar `throttle:api` agressivo nas leituras normais da galeria. Pode ajustar em `config/image-editor.php` (`routes.browser_middleware`, `routes.callback_middleware`, `routes.prefix`, `routes.callback_path`).
+Isto evita herdar `throttle:api` agressivo nas leituras normais da galeria. Pode ajustar via `.env` (`IMAGE_EDITOR_CALLBACK_MIDDLEWARE`, `IMAGE_EDITOR_ROUTES_PREFIX`, `IMAGE_EDITOR_CALLBACK_PATH`) ou em `config/image-editor.php` (`routes.browser_middleware`, `routes.callback_middleware`, `routes.prefix`, `routes.callback_path`).
 
 ### Web (opcional — demo ou host)
 

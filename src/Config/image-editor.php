@@ -10,7 +10,10 @@ return [
         'prefix' => env('IMAGE_EDITOR_ROUTES_PREFIX', 'api'),
         'callback_path' => env('IMAGE_EDITOR_CALLBACK_PATH'),
         'browser_middleware' => ['web'],
-        'callback_middleware' => ['api'],
+        'callback_middleware' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('IMAGE_EDITOR_CALLBACK_MIDDLEWARE', 'api'))
+        ))),
     ],
 
     'name' => 'Image Editor',
