@@ -80,7 +80,7 @@
               stroke-linecap="round"
               stroke-linejoin="round"
               stroke-width="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
         </button>
@@ -668,13 +668,28 @@
           </div>
         </div>
 
+        <!-- Legenda — faixa branca por baixo da composição -->
+        <div
+          v-if="photoCaptionApplied && !zoomLayout && !showingOriginal"
+          class="absolute z-[21] flex items-center justify-center overflow-hidden bg-white text-center shadow-sm ring-1 ring-black/10"
+          :style="photoCaptionBandStyle"
+        >
+          <span
+            class="block w-full whitespace-pre-wrap break-words px-1"
+            :style="photoCaptionTextStyle"
+          >{{ formatCaptionText(photoCaptionApplied.number, photoCaptionApplied.description) }}</span>
+        </div>
+
         <!-- Imagens arrastadas da barra lateral (só folha em branco) -->
         <div
           v-for="ov in imageOverlays"
-          v-show="isBlankCanvas && !zoomLayout"
+          v-show="isBlankCanvas && !zoomLayout && !shouldBakeImageOverlaysInPreview"
           :key="ov.id"
           class="absolute z-[22] select-none touch-none ring-1 ring-white/70"
-          :class="{ 'pointer-events-none': !canMoveImageOverlays }"
+          :class="{
+            'pointer-events-none': !canMoveImageOverlays,
+            'ring-2 ring-sky-400': selectedOverlayId === ov.id
+          }"
           :style="overlayBoxStyle(ov)"
         >
           <div
@@ -684,19 +699,19 @@
             @touchstart.stop="startOverlayMove($event, ov.id)"
           >
             <img :src="ov.src" alt="" class="pointer-events-none h-full w-full" draggable="false" style="object-fit: fill" />
+            <div
+              class="absolute -bottom-1 -right-1 z-10 h-4 w-4 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
+              title="Redimensionar"
+              @mousedown.stop.prevent="startOverlayResize($event, ov.id)"
+              @touchstart.stop.prevent="startOverlayResize($event, ov.id)"
+            ></div>
+            <button
+              type="button"
+              title="Remover imagem"
+              class="absolute -top-2 -right-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white"
+              @click.stop="removeImageOverlay(ov.id)"
+            >×</button>
           </div>
-          <div
-            class="absolute -bottom-1 -right-1 z-10 h-4 w-4 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
-            title="Redimensionar"
-            @mousedown.stop.prevent="startOverlayResize($event, ov.id)"
-            @touchstart.stop.prevent="startOverlayResize($event, ov.id)"
-          ></div>
-          <button
-            type="button"
-            title="Remover imagem"
-            class="absolute -top-2 -right-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white"
-            @click.stop="removeImageOverlay(ov.id)"
-          >×</button>
         </div>
         <!-- Desenhos guardados por cima da imagem (camada vectorial até guardar) -->
         <svg
@@ -836,6 +851,36 @@
 
       <!-- Zoom da vista (não altera a imagem guardada) -->
       <div class="absolute right-16 top-4 z-[48] flex flex-col items-center gap-1 rounded-lg bg-black/60 p-1.5 shadow-lg">
+        <div
+          v-if="galleryTotal > 1"
+          class="mb-0.5 flex w-full items-center justify-between gap-0.5 border-b border-white/15 pb-1"
+        >
+          <button
+            type="button"
+            title="Imagem anterior (← ou arrastar para a direita)"
+            class="flex h-7 flex-1 items-center justify-center rounded-md text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-35"
+            :disabled="!canGalleryPrev"
+            @click="navigateGallery('prev')"
+          >
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <span class="min-w-[2.25rem] text-center text-[10px] tabular-nums text-white/75">
+            {{ galleryPositionLabel }}
+          </span>
+          <button
+            type="button"
+            title="Imagem seguinte (→ ou arrastar para a esquerda)"
+            class="flex h-7 flex-1 items-center justify-center rounded-md text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-35"
+            :disabled="!canGalleryNext"
+            @click="navigateGallery('next')"
+          >
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
         <button type="button" title="Aumentar zoom" class="flex h-8 w-8 items-center justify-center rounded-md text-white hover:bg-white/20" @click="zoomViewIn">+</button>
         <span class="min-w-[2.75rem] text-center text-[11px] tabular-nums text-white/90">{{ viewZoomPercent }}%</span>
         <button type="button" title="Reduzir zoom" class="flex h-8 w-8 items-center justify-center rounded-md text-white hover:bg-white/20" @click="zoomViewOut">−</button>
@@ -959,8 +1004,8 @@
               @click="toggleBlurMenu"
               class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
               :class="{
-                'bg-purple-600': showBlurRegion || committedBlurRegion,
-                'bg-blue-500': activeControl === 'blur' && !showBlurRegion && !committedBlurRegion,
+                'bg-purple-600': showBlurRegion || committedBlurRegion || committedBlurMask || blurApplyGlobal,
+                'bg-blue-500': activeControl === 'blur' && !showBlurRegion && !committedBlurRegion && !committedBlurMask && !blurApplyGlobal,
                 'ring-2 ring-purple-200/60': showBlurMenu
               }"
             >
@@ -1011,8 +1056,8 @@
               @click="togglePixelateMenu"
               class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
               :class="{
-                'bg-amber-600': showPixelateRegion || committedPixelateRegion,
-                'bg-blue-500': activeControl === 'pixelate' && !showPixelateRegion && !committedPixelateRegion,
+                'bg-amber-600': showPixelateRegion || committedPixelateRegion || committedPixelateMask || pixelateApplyGlobal,
+                'bg-blue-500': activeControl === 'pixelate' && !showPixelateRegion && !committedPixelateRegion && !committedPixelateMask && !pixelateApplyGlobal,
                 'ring-2 ring-amber-200/60': showPixelateMenu
               }"
             >
@@ -1258,6 +1303,18 @@
           </button>
           <button
             type="button"
+            title="Legendas — faixa branca por baixo (estilo Word)"
+            @click="toggleControl('caption')"
+            class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
+            :class="{ 'bg-blue-500': activeControl === 'caption' || hasActiveCaptions }"
+          >
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h10M4 14h14M4 18h8" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17l3 3m0 0l3-3m-3 3V14" />
+            </svg>
+          </button>
+          <button
+            type="button"
             title="Marca de água — texto ou logótipo no canto"
             @click="toggleControl('watermark')"
             class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
@@ -1426,6 +1483,114 @@
               </div>
               <p class="text-[10px] text-white/50">Clique no texto para editar. Gravado na imagem ao guardar.</p>
             </div>
+
+            <!-- Legendas (estilo Word) -->
+            <div v-else-if="activeControl === 'caption'" class="mt-2 max-h-[50vh] w-full max-w-xs space-y-3 overflow-y-auto">
+              <p class="text-center text-[11px] text-white/60">
+                Uma legenda por baixo de toda a composição (foto ou folha em branco).
+              </p>
+              <div>
+                <label class="mb-1 block text-sm text-white">Prefixo da numeração</label>
+                <div class="flex flex-wrap gap-1">
+                  <button
+                    v-for="preset in captionPrefixPresets"
+                    :key="'cap-pre-' + preset"
+                    type="button"
+                    class="rounded-lg border px-2 py-0.5 text-xs text-white transition"
+                    :class="isCaptionPrefixPresetActive(preset) ? 'border-sky-400 bg-sky-900/50' : 'border-white/15 bg-white/10 hover:bg-white/20'"
+                    @click="setCaptionPrefix(preset)"
+                  >{{ captionPrefixPresetLabel(preset) }}</button>
+                </div>
+                <input
+                  v-if="showCustomCaptionPrefix"
+                  v-model="captionSettings.prefix"
+                  type="text"
+                  maxlength="40"
+                  placeholder="Ex.: Quadro, Planta…"
+                  class="mt-2 w-full rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
+                  @input="onCaptionSettingsChange"
+                />
+              </div>
+              <div>
+                <label class="mb-1 block text-sm text-white">Separador</label>
+                <div class="flex flex-wrap gap-1">
+                  <button
+                    v-for="opt in captionSeparatorOptions"
+                    :key="'cap-sep-' + opt.id"
+                    type="button"
+                    class="rounded-lg border px-2 py-1 text-xs text-white transition"
+                    :class="captionSettings.separator === opt.id ? 'border-sky-400 bg-sky-900/50' : 'border-white/15 bg-white/10 hover:bg-white/20'"
+                    @click="captionSettings.separator = opt.id; onCaptionSettingsChange()"
+                  >{{ opt.label }}</button>
+                </div>
+              </div>
+              <div>
+                <label class="mb-1 block text-sm text-white">Tamanho do texto: {{ captionSettings.fontSize }} px</label>
+                <input v-model.number="captionSettings.fontSize" type="range" min="10" max="36" class="w-full accent-white" />
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-lg px-3 py-1.5 text-xs text-white"
+                  :class="captionSettings.bold ? 'bg-blue-600' : 'bg-white/15'"
+                  @click="captionSettings.bold = !captionSettings.bold; onCaptionSettingsChange()"
+                >
+                  Negrito
+                </button>
+                <label class="flex items-center gap-1 text-sm text-white">
+                  Cor
+                  <input v-model="captionSettings.color" type="color" class="h-6 w-8 cursor-pointer rounded border-0 bg-transparent" />
+                </label>
+              </div>
+              <div v-if="photoCaptionDraft" class="space-y-2">
+                <div>
+                  <label class="mb-1 block text-sm text-white">Número</label>
+                  <input
+                    v-model.number="photoCaptionDraft.number"
+                    type="number"
+                    min="1"
+                    max="9999"
+                    class="w-full rounded bg-white/20 p-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm text-white">Descrição</label>
+                  <textarea
+                    v-model="photoCaptionDraft.description"
+                    rows="2"
+                    maxlength="2000"
+                    placeholder="Descrição da foto"
+                    class="w-full resize-y rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
+                  />
+                </div>
+                <p class="text-center text-[11px] text-sky-200/90">
+                  Exemplo: {{ captionPreviewSample }}
+                </p>
+                <p class="text-[10px] text-white/50">
+                  {{
+                    photoCaptionApplied
+                      ? 'Legenda ativa. Aplique de novo para atualizar.'
+                      : 'Confirme para ver a faixa branca na composição.'
+                  }}
+                </p>
+                <button
+                  type="button"
+                  class="w-full rounded-lg bg-sky-600 py-2.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+                  :disabled="!photoCaptionDraftCanApply"
+                  @click="confirmPhotoCaption"
+                >
+                  Aplicar à foto
+                </button>
+                <button
+                  v-if="photoCaptionApplied"
+                  type="button"
+                  class="w-full rounded-lg bg-red-900/50 py-2 text-xs text-white hover:bg-red-900/70"
+                  @click="removePhotoCaption"
+                >
+                  Remover legenda
+                </button>
+              </div>
+            </div>
             
             <!-- Gama: dois parâmetros + presets (Intervention só expõe gamma() global) -->
             <div v-else-if="activeControl === 'gamma'" class="w-full max-w-xs mt-2 space-y-3">
@@ -1557,9 +1722,6 @@
                 class="w-full"
               >
               <div v-if="showMaskBrushSizeControl" class="mt-3 border-t border-white/15 pt-3">
-                <p class="mb-2 text-center text-[10px] leading-snug text-white/55">
-                  Pinte na imagem onde quer o efeito. Clique direito ou Alt+arraste para borrar; ou active «Borracha».
-                </p>
                 <label
                   class="mb-2 flex cursor-pointer items-center justify-center gap-2 text-xs text-white/90"
                 >
@@ -1614,10 +1776,18 @@ const props = defineProps({
   showUseInForm: {
     type: Boolean,
     default: false
+  },
+  galleryIndex: {
+    type: Number,
+    default: -1
+  },
+  galleryTotal: {
+    type: Number,
+    default: 0
   }
 })
 
-const emit = defineEmits(['close', 'save', 'error', 'useInForm'])
+const emit = defineEmits(['close', 'save', 'error', 'useInForm', 'gallery-navigate'])
 
 const isBlankCanvas = computed(() => Boolean(props.photo?.is_blank_canvas))
 const showBlankCanvasHint = ref(false)
@@ -1665,6 +1835,22 @@ const showUseInFormWarning = ref(false)
 const isSaving = ref(false)
 const blur = ref(0)
 const pixelate = ref(0)
+/** Intensidade inicial ao desenhar desfoque (evita slider a 0 sem efeito visível). */
+const DEFAULT_BLUR_STRENGTH = 28
+/** Tamanho inicial do bloco ao desenhar pixelização. */
+const DEFAULT_PIXELATE_BLOCK = 12
+
+const ensureBlurEffectStrength = () => {
+  if (blur.value <= 0) {
+    blur.value = DEFAULT_BLUR_STRENGTH
+  }
+}
+
+const ensurePixelateEffectStrength = () => {
+  if (pixelate.value <= 0) {
+    pixelate.value = DEFAULT_PIXELATE_BLOCK
+  }
+}
 const sharpen = ref(0)
 const originalImageUrl = ref(props.imageUrl)
 const showingOriginal = ref(false)
@@ -1682,6 +1868,64 @@ const viewPanY = ref(0)
 const viewPanHandMode = ref(false)
 const isViewPanning = ref(false)
 const spaceKeyDown = ref(false)
+let gallerySwipePointer = null
+
+const canGalleryPrev = computed(() => props.galleryIndex > 0)
+const canGalleryNext = computed(
+  () => props.galleryIndex >= 0 && props.galleryIndex < props.galleryTotal - 1
+)
+const galleryPositionLabel = computed(() => {
+  if (props.galleryIndex < 0 || props.galleryTotal <= 0) {
+    return ''
+  }
+  return `${props.galleryIndex + 1}/${props.galleryTotal}`
+})
+const canUseGallerySwipe = computed(
+  () =>
+    props.galleryTotal > 1 &&
+    !zoomLayout.value &&
+    !showCrop.value &&
+    !drawingTool.value &&
+    !zoomDetailMode.value &&
+    !activeControl.value &&
+    viewZoom.value <= 1.02 &&
+    !viewPanHandMode.value &&
+    !isViewPanning.value &&
+    !spaceKeyDown.value
+)
+
+const navigateGallery = (direction) => {
+  if (direction === 'prev' && canGalleryPrev.value) {
+    emit('gallery-navigate', 'prev')
+  } else if (direction === 'next' && canGalleryNext.value) {
+    emit('gallery-navigate', 'next')
+  }
+}
+
+const tryStartGallerySwipe = (clientX, clientY) => {
+  if (!canUseGallerySwipe.value) {
+    gallerySwipePointer = null
+    return
+  }
+  gallerySwipePointer = { x: clientX, y: clientY }
+}
+
+const finishGallerySwipe = (clientX, clientY) => {
+  if (!gallerySwipePointer) {
+    return
+  }
+  const dx = clientX - gallerySwipePointer.x
+  const dy = clientY - gallerySwipePointer.y
+  gallerySwipePointer = null
+  if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.25) {
+    return
+  }
+  if (dx < 0) {
+    navigateGallery('next')
+  } else {
+    navigateGallery('prev')
+  }
+}
 let viewPanStart = null
 let touchPinchStart = null
 
@@ -1696,6 +1940,26 @@ const viewZoomPercent = computed(() => Math.round(viewZoom.value * 100))
 const isCollageComposition = computed(
   () => isBlankCanvas.value && imageOverlays.value.length > 0
 )
+
+/** Desfoque/pixelização na folha em branco exige compor overlays no servidor. */
+const shouldBakeImageOverlaysInPreview = computed(() => {
+  if (!isCollageComposition.value) {
+    return false
+  }
+
+  return (
+    blur.value > 0 ||
+    showBlurRegion.value ||
+    committedBlurRegion.value ||
+    committedBlurMask.value ||
+    blurApplyGlobal.value ||
+    pixelate.value > 0 ||
+    showPixelateRegion.value ||
+    committedPixelateRegion.value ||
+    committedPixelateMask.value ||
+    pixelateApplyGlobal.value
+  )
+})
 
 const showDrawingsOverlay = computed(
   () => drawings.value.length > 0 && !zoomLayout.value
@@ -1776,6 +2040,10 @@ const blurStart = ref({ x: 0, y: 0 })
 const blurSize = ref({ width: 0, height: 0 })
 /** Zona de desfoque por retângulo já confirmada (coords naturais). */
 const committedBlurRegion = ref(null)
+/** Máscara de pincel de desfoque confirmada (data URL). */
+const committedBlurMask = ref(null)
+/** Desfoque em toda a imagem (menu «Toda a imagem»). */
+const blurApplyGlobal = ref(false)
 const showPixelateRegion = ref(false)
 const pixelateShapeMode = ref('rectangle')
 const pixelateMaskDirty = ref(false)
@@ -1784,6 +2052,10 @@ const pixelateStart = ref({ x: 0, y: 0 })
 const pixelateSize = ref({ width: 0, height: 0 })
 /** Zona de pixelização por retângulo já confirmada (coords naturais). */
 const committedPixelateRegion = ref(null)
+/** Máscara de pincel de pixelização confirmada (data URL). */
+const committedPixelateMask = ref(null)
+/** Pixelização em toda a imagem (menu «Toda a imagem»). */
+const pixelateApplyGlobal = ref(false)
 /** Raio da borracha de máscara (px da imagem natural); partilhado entre desfoque e pixelização. */
 const maskBrushRadiusNatural = ref(16)
 /** Quando true, o traço remove efeito da máscara (em vez de acrescentar). */
@@ -1937,6 +2209,35 @@ const movingTextIndex = ref(null)
 const textOffset = ref({ x: 0, y: 0 })
 /** Imagens extra: x,y,width,height em px da imagem natural; src = data URL. */
 const imageOverlays = ref([])
+const selectedOverlayId = ref(null)
+
+const createDefaultCaptionSettings = () => ({
+  prefix: 'Fig.',
+  separator: ' — ',
+  fontSize: 14,
+  bandPadding: 10,
+  color: '#000000',
+  bold: false
+})
+
+const captionSettings = ref(createDefaultCaptionSettings())
+const photoCaptionApplied = ref(null)
+const photoCaptionDraft = ref(null)
+
+const createDefaultPhotoCaptionDraft = () => ({
+  number: 1,
+  description: ''
+})
+
+const captionStandardPrefixes = ['Fig.', 'Figura', 'Imagem', 'Foto', '']
+const captionPrefixPresets = [...captionStandardPrefixes, '__custom__']
+const showCustomCaptionPrefix = ref(false)
+const captionSeparatorOptions = [
+  { id: ' — ', label: '—' },
+  { id: ' - ', label: '-' },
+  { id: ': ', label: ':' },
+  { id: '. ', label: '.' }
+]
 /** Configuração aplicada na imagem (preview/guardar). */
 const watermarkApplied = ref(null)
 /** Rascunho enquanto o painel está aberto (não altera a imagem até confirmar). */
@@ -2082,6 +2383,8 @@ const captureEditSnapshot = () => ({
   blurMaskDirty: blurMaskDirty.value,
   blurMaskDataUrl: blurMaskDirty.value ? exportBlurMaskDataUrl() : null,
   committedBlurRegion: committedBlurRegion.value ? cloneJson(committedBlurRegion.value) : null,
+  committedBlurMask: committedBlurMask.value,
+  blurApplyGlobal: blurApplyGlobal.value,
   showPixelateRegion: showPixelateRegion.value,
   pixelateShapeMode: pixelateShapeMode.value,
   pixelateStart: { ...pixelateStart.value },
@@ -2091,9 +2394,14 @@ const captureEditSnapshot = () => ({
   committedPixelateRegion: committedPixelateRegion.value
     ? cloneJson(committedPixelateRegion.value)
     : null,
+  committedPixelateMask: committedPixelateMask.value,
+  pixelateApplyGlobal: pixelateApplyGlobal.value,
   maskBrushRadiusNatural: maskBrushRadiusNatural.value,
   drawings: cloneJson(drawings.value),
   imageOverlays: cloneJson(imageOverlays.value),
+  selectedOverlayId: selectedOverlayId.value,
+  captionSettings: cloneJson(captionSettings.value),
+  photoCaptionApplied: photoCaptionApplied.value ? cloneJson(photoCaptionApplied.value) : null,
   texts: cloneJson(texts.value),
   watermarkApplied: watermarkApplied.value ? cloneJson(watermarkApplied.value) : null,
   zoomLayout: zoomLayout.value ? cloneJson(zoomLayout.value) : null,
@@ -2214,6 +2522,8 @@ const restoreEditSnapshot = async (snap) => {
   committedBlurRegion.value = snap.committedBlurRegion
     ? cloneJson(snap.committedBlurRegion)
     : null
+  committedBlurMask.value = snap.committedBlurMask ?? null
+  blurApplyGlobal.value = Boolean(snap.blurApplyGlobal)
   showPixelateRegion.value = snap.showPixelateRegion
   pixelateShapeMode.value = snap.pixelateShapeMode
   pixelateStart.value = { ...snap.pixelateStart }
@@ -2221,9 +2531,27 @@ const restoreEditSnapshot = async (snap) => {
   committedPixelateRegion.value = snap.committedPixelateRegion
     ? cloneJson(snap.committedPixelateRegion)
     : null
+  committedPixelateMask.value = snap.committedPixelateMask ?? null
+  pixelateApplyGlobal.value = Boolean(snap.pixelateApplyGlobal)
   maskBrushRadiusNatural.value = snap.maskBrushRadiusNatural
   drawings.value = cloneJson(snap.drawings)
   imageOverlays.value = cloneJson(snap.imageOverlays)
+  selectedOverlayId.value = snap.selectedOverlayId ?? imageOverlays.value[0]?.id ?? null
+  captionSettings.value = snap.captionSettings
+    ? { ...createDefaultCaptionSettings(), ...cloneJson(snap.captionSettings) }
+    : createDefaultCaptionSettings()
+  showCustomCaptionPrefix.value = !captionStandardPrefixes.includes(captionSettings.value.prefix)
+  if (snap.photoCaptionApplied) {
+    photoCaptionApplied.value = cloneJson(snap.photoCaptionApplied)
+  } else if (snap.photoCaption?.enabled) {
+    photoCaptionApplied.value = {
+      number: snap.photoCaption.number ?? 1,
+      description: snap.photoCaption.description ?? ''
+    }
+  } else {
+    photoCaptionApplied.value = null
+  }
+  photoCaptionDraft.value = null
   texts.value = cloneJson(snap.texts)
   watermarkApplied.value = snap.watermarkApplied ? cloneJson(snap.watermarkApplied) : null
   watermarkDraft.value = null
@@ -2271,6 +2599,22 @@ const isFormFieldTarget = (target) => {
 
 const onHistoryKeyDown = (e) => {
   if (isFormFieldTarget(e.target)) {
+    return
+  }
+  if (
+    (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+    !zoomLayout.value &&
+    !drawingTool.value &&
+    !zoomDetailMode.value &&
+    !showCrop.value
+  ) {
+    if (e.key === 'ArrowLeft' && canGalleryPrev.value) {
+      e.preventDefault()
+      navigateGallery('prev')
+    } else if (e.key === 'ArrowRight' && canGalleryNext.value) {
+      e.preventDefault()
+      navigateGallery('next')
+    }
     return
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -3482,21 +3826,10 @@ const cancelCrop = () => {
 const toggleCrop = () => {
   closeDrawingMenu()
   if (!showCrop.value) {
-    stopBlurPan()
-    stopPixelatePan()
-    stopBlurBrushStroke()
-    stopPixelateBrushStroke()
-    clearBlurBrushMask()
-    clearPixelateBrushMask()
+    commitPendingEffectEdits()
     blurShapeMode.value = 'rectangle'
     pixelateShapeMode.value = 'rectangle'
-    showBlurRegion.value = false
-    showPixelateRegion.value = false
     showCrop.value = true
-    stopBlurPan()
-    stopPixelatePan()
-    stopBlurBrushStroke()
-    stopPixelateBrushStroke()
     beginCropSession()
     applyChanges({ crop: null })
     scheduleCropDisplaySync()
@@ -3505,81 +3838,99 @@ const toggleCrop = () => {
   confirmCrop()
 }
 
-const toggleBlurRegion = () => {
-  closeDrawingMenu()
-  if (!showBlurRegion.value) {
-    cancelCropPanPreviewRaf()
-    stopCropPan()
-    showCrop.value = false
-    showPixelateRegion.value = false
-    stopPixelatePan()
-    stopPixelateBrushStroke()
-    clearPixelateBrushMask()
-    pixelateShapeMode.value = 'rectangle'
+const commitPixelateBrushMaskIfDirty = () => {
+  if (!pixelateMaskDirty.value || !pixelateBrushCanvas) {
+    return
   }
-  if (!showBlurRegion.value) {
-    openBlurRectangleEditor()
-  } else {
-    dismissEffectRectangleEditors()
-    applyChanges()
+  const dataUrl = exportBrushMaskCanvas(pixelateBrushCanvas)
+  if (dataUrl) {
+    committedPixelateMask.value = dataUrl
   }
 }
 
-const togglePixelateRegion = () => {
-  closeDrawingMenu()
-  if (!showPixelateRegion.value) {
-    cancelCropPanPreviewRaf()
-    stopCropPan()
-    showCrop.value = false
-    showBlurRegion.value = false
-    stopBlurPan()
-    stopBlurBrushStroke()
-    clearBlurBrushMask()
-    blurShapeMode.value = 'rectangle'
+const commitBlurBrushMaskIfDirty = () => {
+  if (!blurMaskDirty.value || !blurBrushCanvas) {
+    return
   }
-  if (!showPixelateRegion.value) {
-    openPixelateRectangleEditor()
-  } else {
-    dismissEffectRectangleEditors()
-    applyChanges()
+  const dataUrl = exportBrushMaskCanvas(blurBrushCanvas)
+  if (dataUrl) {
+    committedBlurMask.value = dataUrl
   }
 }
 
-/** Esconde o retângulo e guarda a zona para a pré-visualização. */
-const dismissEffectRectangleEditors = () => {
-  if (showBlurRegion.value && blurShapeMode.value === 'rectangle') {
-    const natural = captureBlurRegionFromDisplay()
-    if (natural) {
-      committedBlurRegion.value = natural
-    }
-    exitBlurRectangleUi()
+/** Confirma pixelização em curso antes de mudar para outra ferramenta de efeito. */
+const prepareSwitchFromPixelateTool = () => {
+  if (!showPixelateRegion.value) {
+    return
   }
-  if (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle') {
+  if (pixelateShapeMode.value === 'rectangle') {
     const natural = capturePixelateRegionFromDisplay()
     if (natural) {
       committedPixelateRegion.value = natural
+      pixelateApplyGlobal.value = false
     }
     exitPixelateRectangleUi()
+    return
+  }
+  if (pixelateShapeMode.value === 'brush') {
+    commitPixelateBrushMaskIfDirty()
+    stopPixelateBrushStroke()
+    stopPixelatePan()
+    showPixelateRegion.value = false
+    clearPixelateBrushMask()
+    pixelateShapeMode.value = 'rectangle'
   }
 }
 
-const closeBlurOption = () => {
-  dismissEffectRectangleEditors()
-  showBlurMenu.value = false
-  if (activeControl.value === 'blur') {
-    activeControl.value = null
+/** Confirma desfoque em curso antes de mudar para outra ferramenta de efeito. */
+const prepareSwitchFromBlurTool = () => {
+  if (!showBlurRegion.value) {
+    return
+  }
+  if (blurShapeMode.value === 'rectangle') {
+    const natural = captureBlurRegionFromDisplay()
+    if (natural) {
+      committedBlurRegion.value = natural
+      blurApplyGlobal.value = false
+    }
+    exitBlurRectangleUi()
+    return
+  }
+  if (blurShapeMode.value === 'brush') {
+    commitBlurBrushMaskIfDirty()
+    stopBlurBrushStroke()
+    stopBlurPan()
+    showBlurRegion.value = false
+    clearBlurBrushMask()
+    blurShapeMode.value = 'rectangle'
+  }
+}
+
+/** Confirma desfoque e pixelização em curso (retângulo ou pincel) antes de mudar de ferramenta. */
+const commitPendingEffectEdits = () => {
+  prepareSwitchFromBlurTool()
+  prepareSwitchFromPixelateTool()
+}
+
+const closeEffectOption = (kind) => {
+  commitPendingEffectEdits()
+  if (kind === 'blur') {
+    showBlurMenu.value = false
+    if (activeControl.value === 'blur') {
+      activeControl.value = null
+    }
+  } else {
+    showPixelateMenu.value = false
+    if (activeControl.value === 'pixelate') {
+      activeControl.value = null
+    }
   }
   applyChanges()
 }
 
-const closePixelateOption = () => {
-  dismissEffectRectangleEditors()
-  showPixelateMenu.value = false
-  if (activeControl.value === 'pixelate') {
-    activeControl.value = null
-  }
-  applyChanges()
-}
+const closeBlurOption = () => closeEffectOption('blur')
+
+const closePixelateOption = () => closeEffectOption('pixelate')
 
 const closeActiveControlPanel = () => {
   if (activeControl.value === 'blur') {
@@ -3598,6 +3949,9 @@ const toggleControl = (control) => {
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
+  if (control !== 'blur' && control !== 'pixelate') {
+    commitPendingEffectEdits()
+  }
   if (activeControl.value === control) {
     if (control === 'blur') {
       closeBlurOption()
@@ -3621,6 +3975,9 @@ const toggleControl = (control) => {
     if (control === 'watermark') {
       openWatermarkDraft()
     }
+    if (control === 'caption') {
+      openPhotoCaptionDraft()
+    }
     if (control !== 'text') {
       selectedTextIndex.value = null
     }
@@ -3629,6 +3986,7 @@ const toggleControl = (control) => {
 
 const toggleFlip = (direction) => {
   closeDrawingMenu()
+  commitPendingEffectEdits()
   if (direction === 'horizontal') {
     flipHorizontal.value = !flipHorizontal.value
   } else {
@@ -3639,6 +3997,7 @@ const toggleFlip = (direction) => {
 
 const rotateImage = () => {
   closeDrawingMenu()
+  commitPendingEffectEdits()
   rotation.value = (rotation.value + 90) % 360
   if (showCrop.value && cropNatural.value.width > 0) {
     rotateCropNatural90Cw()
@@ -3744,6 +4103,7 @@ const getControlLabel = (control) => {
     pixelate: 'Pixelização (tamanho do bloco)',
     sharpen: 'Nitidez (negativo = suavizar)',
     text: 'Adicionar Texto',
+    caption: 'Legendas',
     watermark: 'Marca de água'
   }
   return labels[control] || ''
@@ -3926,6 +4286,7 @@ const applyFilterPreset = (id) => {
     return
   }
   closeDrawingMenu()
+  commitPendingEffectEdits()
   activeFilterPreset.value = id === 'neutral' ? null : id
   brightness.value = preset.brightness
   contrast.value = preset.contrast
@@ -3933,13 +4294,13 @@ const applyFilterPreset = (id) => {
   gamma.value = preset.gamma
   gammaFine.value = preset.gammaFine
   sharpen.value = preset.sharpen ?? 0
-  scheduleApplyChanges()
   flushPreview()
 }
 
 const toggleFilterMenu = () => {
   showFilterMenu.value = !showFilterMenu.value
   if (showFilterMenu.value) {
+    commitPendingEffectEdits()
     showBlurMenu.value = false
     showPixelateMenu.value = false
     showDrawingMenu.value = false
@@ -3959,10 +4320,10 @@ const applyGammaPreset = (name) => {
   if (!pair) {
     return
   }
+  commitPendingEffectEdits()
   gamma.value = pair[0]
   gammaFine.value = pair[1]
   activeFilterPreset.value = null
-  scheduleApplyChanges()
   flushPreview()
 }
 
@@ -4077,16 +4438,15 @@ const exitPixelateRectangleUi = () => {
 }
 
 const openBlurRectangleEditor = () => {
+  ensureBlurEffectStrength()
   closeDrawingMenu()
   cancelCropPanPreviewRaf()
   stopCropPan()
   showCrop.value = false
-  showPixelateRegion.value = false
-  stopPixelatePan()
-  stopPixelateBrushStroke()
-  clearPixelateBrushMask()
-  pixelateShapeMode.value = 'rectangle'
+  prepareSwitchFromPixelateTool()
+  committedBlurMask.value = null
   blurShapeMode.value = 'rectangle'
+  blurApplyGlobal.value = false
   showBlurRegion.value = true
   activeControl.value = 'blur'
   const disp = committedBlurRegion.value
@@ -4101,16 +4461,15 @@ const openBlurRectangleEditor = () => {
 }
 
 const openPixelateRectangleEditor = () => {
+  ensurePixelateEffectStrength()
   closeDrawingMenu()
   cancelCropPanPreviewRaf()
   stopCropPan()
   showCrop.value = false
-  showBlurRegion.value = false
-  stopBlurPan()
-  stopBlurBrushStroke()
-  clearBlurBrushMask()
-  blurShapeMode.value = 'rectangle'
+  prepareSwitchFromBlurTool()
+  committedPixelateMask.value = null
   pixelateShapeMode.value = 'rectangle'
+  pixelateApplyGlobal.value = false
   showPixelateRegion.value = true
   activeControl.value = 'pixelate'
   const disp = committedPixelateRegion.value
@@ -4124,8 +4483,64 @@ const openPixelateRectangleEditor = () => {
   }
 }
 
+const hasActiveBlurTarget = () =>
+  Boolean(
+    blurApplyGlobal.value ||
+    committedBlurRegion.value ||
+    committedBlurMask.value ||
+    (showBlurRegion.value &&
+      blurShapeMode.value === 'brush' &&
+      blurMaskDirty.value) ||
+    (showBlurRegion.value && blurShapeMode.value === 'rectangle')
+  )
+
+const hasActivePixelateTarget = () =>
+  Boolean(
+    pixelateApplyGlobal.value ||
+    committedPixelateRegion.value ||
+    committedPixelateMask.value ||
+    (showPixelateRegion.value &&
+      pixelateShapeMode.value === 'brush' &&
+      pixelateMaskDirty.value) ||
+    (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle')
+  )
+
+const resolveBlurMaskPayload = () => {
+  if (resolveActiveBlurLevel() <= 0) {
+    return null
+  }
+  if (
+    showBlurRegion.value &&
+    blurShapeMode.value === 'brush' &&
+    blurMaskDirty.value
+  ) {
+    return exportBlurMaskDataUrl()
+  }
+  return committedBlurMask.value
+}
+
+const resolvePixelateMaskPayload = () => {
+  if (resolveActivePixelateLevel() <= 0) {
+    return null
+  }
+  if (
+    showPixelateRegion.value &&
+    pixelateShapeMode.value === 'brush' &&
+    pixelateMaskDirty.value
+  ) {
+    return exportPixelateMaskDataUrl()
+  }
+  return committedPixelateMask.value
+}
+
+const resolveActiveBlurLevel = () =>
+  blur.value > 0 && hasActiveBlurTarget() ? blur.value : 0
+
+const resolveActivePixelateLevel = () =>
+  pixelate.value > 0 && hasActivePixelateTarget() ? pixelate.value : 0
+
 const resolveBlurRegionPayload = () => {
-  if (blur.value <= 0) {
+  if (resolveActiveBlurLevel() <= 0 || blurApplyGlobal.value) {
     return null
   }
   if (showBlurRegion.value && blurShapeMode.value === 'rectangle') {
@@ -4135,7 +4550,7 @@ const resolveBlurRegionPayload = () => {
 }
 
 const resolvePixelateRegionPayload = () => {
-  if (pixelate.value <= 0) {
+  if (resolveActivePixelateLevel() <= 0 || pixelateApplyGlobal.value) {
     return null
   }
   if (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle') {
@@ -4971,6 +5386,212 @@ const overlayBoxStyle = (ov) => {
   }
 }
 
+const imageDisplayScale = () => {
+  const el = imageRef.value
+  if (!el?.naturalWidth || !el?.naturalHeight) {
+    return 1
+  }
+  const rw = el.clientWidth
+  const rh = el.clientHeight
+  if (!rw || !rh) {
+    return 1
+  }
+  return Math.min(rw / el.naturalWidth, rh / el.naturalHeight)
+}
+
+const formatCaptionText = (number, description) => {
+  const prefix = (captionSettings.value.prefix || '').trim()
+  const sep = captionSettings.value.separator || ' — '
+  const numPart = prefix ? `${prefix} ${number}` : String(number)
+  const desc = (description || '').trim()
+  return desc ? `${numPart}${sep}${desc}` : numPart
+}
+
+const wrapCaptionTextToWidth = (text, fontSize, maxWidth) => {
+  if (!text || maxWidth < 1) {
+    return text || ''
+  }
+  const charWidth = Math.max(1, fontSize * 0.55)
+  const maxChars = Math.max(1, Math.floor(maxWidth / charWidth))
+  const out = []
+
+  for (const paragraph of text.split(/\r\n|\r|\n/)) {
+    const trimmed = paragraph.trim()
+    if (!trimmed) {
+      out.push('')
+      continue
+    }
+    const words = trimmed.split(/\s+/).filter(Boolean)
+    let current = ''
+    for (const word of words) {
+      const trial = current ? `${current} ${word}` : word
+      if (trial.length <= maxChars) {
+        current = trial
+      } else {
+        if (current) {
+          out.push(current)
+        }
+        current = word
+      }
+    }
+    if (current) {
+      out.push(current)
+    }
+  }
+
+  return out.join('\n')
+}
+
+const estimateCaptionBandHeightNat = (number, description, widthNat) => {
+  if (!widthNat || widthNat < 2) {
+    return 0
+  }
+  const fontSize = captionSettings.value.fontSize
+  const padding = captionSettings.value.bandPadding
+  const innerW = Math.max(1, widthNat - padding * 2)
+  const content = formatCaptionText(number, description)
+  const wrapped = wrapCaptionTextToWidth(content, fontSize, innerW)
+  const lines = wrapped.split('\n').filter((l, i, a) => l !== '' || a.length > 1).length || 1
+  const textH = lines * fontSize * 1.3
+  return Math.max(Math.ceil(fontSize * 2.2), Math.ceil(textH + padding * 2))
+}
+
+const photoCaptionBandStyle = computed(() => {
+  void captionSettings.value
+  void imageNaturalVersion.value
+  if (!photoCaptionApplied.value) {
+    return { display: 'none' }
+  }
+  const el = imageRef.value
+  if (!el?.naturalWidth || !el?.naturalHeight) {
+    return { display: 'none' }
+  }
+  const bandNat = estimateCaptionBandHeightNat(
+    photoCaptionApplied.value.number,
+    photoCaptionApplied.value.description,
+    el.naturalWidth
+  )
+  const d = naturalRectToDisplay(0, el.naturalHeight, el.naturalWidth, bandNat)
+  return {
+    left: `${d.left}px`,
+    top: `${d.top}px`,
+    width: `${d.width}px`,
+    height: `${d.height}px`
+  }
+})
+
+const photoCaptionTextStyle = computed(() => {
+  const scale = imageDisplayScale()
+  return {
+    fontSize: `${Math.max(9, captionSettings.value.fontSize * scale)}px`,
+    color: captionSettings.value.color,
+    fontWeight: captionSettings.value.bold ? '700' : '400',
+    lineHeight: 1.3
+  }
+})
+
+const hasActiveCaptions = computed(() => photoCaptionApplied.value !== null)
+
+const buildCaptionSettingsPayload = () => ({
+  prefix: captionSettings.value.prefix || '',
+  separator: captionSettings.value.separator || ' — ',
+  font_size: Math.round(captionSettings.value.fontSize),
+  band_padding: Math.round(captionSettings.value.bandPadding),
+  color: captionSettings.value.color,
+  bold: Boolean(captionSettings.value.bold)
+})
+
+const mapImageOverlaysPayload = () =>
+  imageOverlays.value.map(({ src, x, y, width, height }) => ({
+    src,
+    x: Math.round(x),
+    y: Math.round(y),
+    width: Math.round(width),
+    height: Math.round(height)
+  }))
+
+const captionPrefixPresetLabel = (preset) => {
+  if (preset === '') {
+    return '(só n.º)'
+  }
+  if (preset === '__custom__') {
+    return 'Personalizado'
+  }
+  return preset
+}
+
+const isCaptionPrefixPresetActive = (preset) => {
+  if (preset === '__custom__') {
+    return showCustomCaptionPrefix.value || !captionStandardPrefixes.includes(captionSettings.value.prefix)
+  }
+  return !showCustomCaptionPrefix.value && captionSettings.value.prefix === preset
+}
+
+const setCaptionPrefix = (preset) => {
+  if (preset === '__custom__') {
+    showCustomCaptionPrefix.value = true
+    if (captionStandardPrefixes.includes(captionSettings.value.prefix)) {
+      captionSettings.value.prefix = ''
+    }
+    onCaptionSettingsChange()
+    return
+  }
+  showCustomCaptionPrefix.value = false
+  captionSettings.value.prefix = preset
+  onCaptionSettingsChange()
+}
+
+const captionPreviewSample = computed(() => {
+  const n = photoCaptionDraft.value?.number ?? photoCaptionApplied.value?.number ?? 1
+  const desc =
+    photoCaptionDraft.value?.description ??
+    photoCaptionApplied.value?.description ??
+    'Descrição da foto'
+  return formatCaptionText(n, desc || 'Descrição da foto')
+})
+
+const onCaptionSettingsChange = () => {
+  recordEditHistory()
+}
+
+const clonePhotoCaption = (cap) => JSON.parse(JSON.stringify(cap))
+
+const openPhotoCaptionDraft = () => {
+  photoCaptionDraft.value = photoCaptionApplied.value
+    ? clonePhotoCaption(photoCaptionApplied.value)
+    : createDefaultPhotoCaptionDraft()
+}
+
+const ensurePhotoCaptionDraft = () => {
+  if (!photoCaptionDraft.value) {
+    photoCaptionDraft.value = createDefaultPhotoCaptionDraft()
+  }
+}
+
+const photoCaptionDraftCanApply = computed(() => {
+  const n = Number(photoCaptionDraft.value?.number)
+  return Number.isFinite(n) && n >= 1 && n <= 9999
+})
+
+const confirmPhotoCaption = () => {
+  if (!photoCaptionDraftCanApply.value || !photoCaptionDraft.value) {
+    return
+  }
+  photoCaptionApplied.value = {
+    number: Math.max(1, Math.round(photoCaptionDraft.value.number)),
+    description: photoCaptionDraft.value.description || ''
+  }
+  activeControl.value = null
+  recordEditHistory()
+}
+
+const removePhotoCaption = () => {
+  photoCaptionApplied.value = null
+  photoCaptionDraft.value = createDefaultPhotoCaptionDraft()
+  activeControl.value = null
+  recordEditHistory()
+}
+
 const shrinkDataUrlForOverlay = (dataUrl, maxSide = 1200) => {
   return new Promise((resolve, reject) => {
     const img = new window.Image()
@@ -5046,6 +5667,7 @@ const addImageOverlayFromDataUrl = (src) => {
       width: nw,
       height: nh
     })
+    selectedOverlayId.value = imageOverlays.value[imageOverlays.value.length - 1].id
     scheduleApplyChanges()
   }
   img.src = src
@@ -5082,6 +5704,9 @@ const addImageOverlayFromUrl = async (url) => {
 
 const removeImageOverlay = (id) => {
   imageOverlays.value = imageOverlays.value.filter((o) => o.id !== id)
+  if (selectedOverlayId.value === id) {
+    selectedOverlayId.value = imageOverlays.value[0]?.id ?? null
+  }
   scheduleApplyChanges()
 }
 
@@ -5134,6 +5759,7 @@ const startOverlayMove = (e, id) => {
   if (!ov) {
     return
   }
+  selectedOverlayId.value = id
   const p = clientToImgLocal(e)
   const n = displayPointToNatural(p.x, p.y)
   overlayMoveGrabNat.value = { x: n.x - ov.x, y: n.y - ov.y }
@@ -5665,9 +6291,8 @@ const toggleZoomDetailMode = () => {
     clearZoomDetailState()
     return
   }
+  commitPendingEffectEdits()
   showCrop.value = false
-  showBlurRegion.value = false
-  showPixelateRegion.value = false
   drawingTool.value = null
   activeControl.value = null
   zoomDetailMode.value = true
@@ -5828,7 +6453,10 @@ const onViewportTouchStart = (e) => {
       stageY: (mid.y - viewPanY.value) / viewZoom.value
     }
   } else if (e.touches.length === 1 && viewPanHandMode.value) {
+    gallerySwipePointer = null
     startViewPan(e)
+  } else if (e.touches.length === 1) {
+    tryStartGallerySwipe(e.touches[0].clientX, e.touches[0].clientY)
   }
 }
 
@@ -5848,8 +6476,13 @@ const onViewportTouchEnd = (e) => {
   if (!e.touches || e.touches.length < 2) {
     touchPinchStart = null
   }
+  if (gallerySwipePointer && e.changedTouches?.length) {
+    const touch = e.changedTouches[0]
+    finishGallerySwipe(touch.clientX, touch.clientY)
+  }
   if (!e.touches || e.touches.length === 0) {
     stopViewPan()
+    gallerySwipePointer = null
   }
 }
 
@@ -5974,7 +6607,6 @@ const closeDrawingPanel = () => {
   stopPenStroke()
   stopDrawingMove()
   penDraftPoints.value = []
-  const hadDrawingUi = Boolean(drawingTool.value || showDrawingMenu.value)
   drawingTool.value = null
   pathDraftPoints.value = []
   pathDraftHoverPos.value = null
@@ -5987,7 +6619,7 @@ const toggleDrawingMenu = () => {
     closeDrawingPanel()
     return
   }
-  dismissEffectRectangleEditors()
+  commitPendingEffectEdits()
   showDrawingMenu.value = true
   activeControl.value = null
   showPixelateMenu.value = false
@@ -6004,6 +6636,7 @@ const togglePixelateMenu = () => {
     closePixelateOption()
     return
   }
+  commitPendingEffectEdits()
   showPixelateMenu.value = true
   showDrawingMenu.value = false
   showBlurMenu.value = false
@@ -6018,6 +6651,7 @@ const toggleBlurMenu = () => {
     closeBlurOption()
     return
   }
+  commitPendingEffectEdits()
   showBlurMenu.value = true
   showDrawingMenu.value = false
   showPixelateMenu.value = false
@@ -6027,29 +6661,36 @@ const selectBlurRectangle = () => {
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
+  prepareSwitchFromPixelateTool()
   blurShapeMode.value = 'rectangle'
+  blurApplyGlobal.value = false
   clearBlurBrushMask()
+  committedBlurMask.value = null
   showBlurMenu.value = false
   if (!showBlurRegion.value) {
     openBlurRectangleEditor()
   } else {
-    dismissEffectRectangleEditors()
+    commitPendingEffectEdits()
     applyChanges()
   }
 }
 
 const selectBlurGlobal = () => {
+  ensureBlurEffectStrength()
   closeDrawingMenu()
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
+  prepareSwitchFromPixelateTool()
   stopBlurBrushStroke()
   clearBlurBrushMask()
+  committedBlurMask.value = null
   blurShapeMode.value = 'rectangle'
   if (showBlurRegion.value) {
     exitBlurRectangleUi()
   }
   committedBlurRegion.value = null
+  blurApplyGlobal.value = true
   activeControl.value = 'blur'
   applyChanges()
 }
@@ -6059,13 +6700,11 @@ const selectBlurBrush = () => {
   pathDraftPoints.value = []
   drawDrag.value = null
   if (!showBlurRegion.value || blurShapeMode.value !== 'brush') {
+    ensureBlurEffectStrength()
+    prepareSwitchFromPixelateTool()
     committedBlurRegion.value = null
-    showPixelateRegion.value = false
-    stopPixelatePan()
-    stopPixelateBrushStroke()
-    clearPixelateBrushMask()
-    pixelateShapeMode.value = 'rectangle'
-    committedPixelateRegion.value = null
+    committedBlurMask.value = null
+    blurApplyGlobal.value = false
     blurShapeMode.value = 'brush'
     showBlurRegion.value = true
     activeControl.value = 'blur'
@@ -6082,13 +6721,16 @@ const selectPixelateRectangle = () => {
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
+  prepareSwitchFromBlurTool()
   pixelateShapeMode.value = 'rectangle'
+  pixelateApplyGlobal.value = false
   clearPixelateBrushMask()
+  committedPixelateMask.value = null
   showPixelateMenu.value = false
   if (!showPixelateRegion.value) {
     openPixelateRectangleEditor()
   } else {
-    dismissEffectRectangleEditors()
+    commitPendingEffectEdits()
     applyChanges()
   }
 }
@@ -6098,13 +6740,11 @@ const selectPixelateBrush = () => {
   pathDraftPoints.value = []
   drawDrag.value = null
   if (!showPixelateRegion.value || pixelateShapeMode.value !== 'brush') {
+    ensurePixelateEffectStrength()
+    prepareSwitchFromBlurTool()
     committedPixelateRegion.value = null
-    showBlurRegion.value = false
-    stopBlurPan()
-    stopBlurBrushStroke()
-    clearBlurBrushMask()
-    blurShapeMode.value = 'rectangle'
-    committedBlurRegion.value = null
+    committedPixelateMask.value = null
+    pixelateApplyGlobal.value = false
     pixelateShapeMode.value = 'brush'
     showPixelateRegion.value = true
     activeControl.value = 'pixelate'
@@ -6118,22 +6758,26 @@ const selectPixelateBrush = () => {
 }
 
 const selectPixelateGlobal = () => {
+  ensurePixelateEffectStrength()
   closeDrawingMenu()
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
+  prepareSwitchFromBlurTool()
   pixelateShapeMode.value = 'rectangle'
   clearPixelateBrushMask()
+  committedPixelateMask.value = null
   if (showPixelateRegion.value) {
     exitPixelateRectangleUi()
   }
   committedPixelateRegion.value = null
+  pixelateApplyGlobal.value = true
   activeControl.value = 'pixelate'
   applyChanges()
 }
 
 const selectDrawingTool = (tool) => {
-  dismissEffectRectangleEditors()
+  commitPendingEffectEdits()
   showPixelateMenu.value = false
   showBlurMenu.value = false
   if (activeControl.value === 'blur' || activeControl.value === 'pixelate') {
@@ -6425,23 +7069,23 @@ const buildEditPayload = (options = {}) => {
     filter_preset: activeFilterPreset.value || null,
     gamma: gamma.value,
     gamma_fine: gammaFine.value,
-    blur: blur.value,
-    blur_brush: showBlurRegion.value && blurShapeMode.value === 'brush',
-    blur_mask:
-      showBlurRegion.value &&
-      blurShapeMode.value === 'brush' &&
-      blurMaskDirty.value
-        ? exportBlurMaskDataUrl()
-        : null,
+    blur: resolveActiveBlurLevel(),
+    blur_brush:
+      resolveActiveBlurLevel() > 0 &&
+      Boolean(
+        (showBlurRegion.value && blurShapeMode.value === 'brush') ||
+          committedBlurMask.value
+      ),
+    blur_mask: resolveBlurMaskPayload(),
     blur_region: resolveBlurRegionPayload(),
-    pixelate: pixelate.value,
-    pixelate_brush: showPixelateRegion.value && pixelateShapeMode.value === 'brush',
-    pixelate_mask:
-      showPixelateRegion.value &&
-      pixelateShapeMode.value === 'brush' &&
-      pixelateMaskDirty.value
-        ? exportPixelateMaskDataUrl()
-        : null,
+    pixelate: resolveActivePixelateLevel(),
+    pixelate_brush:
+      resolveActivePixelateLevel() > 0 &&
+      Boolean(
+        (showPixelateRegion.value && pixelateShapeMode.value === 'brush') ||
+          committedPixelateMask.value
+      ),
+    pixelate_mask: resolvePixelateMaskPayload(),
     pixelate_region: resolvePixelateRegionPayload(),
     sharpen: sharpen.value,
     flip_horizontal: flipHorizontal.value,
@@ -6451,19 +7095,20 @@ const buildEditPayload = (options = {}) => {
     texts: texts.value,
     drawings:
       options.includeSaveFields || options.bakeDrawings ? drawings.value : [],
-    image_overlays: options.includeSaveFields
-      ? imageOverlays.value.map(({ src, x, y, width, height }) => ({
-          src,
-          x: Math.round(x),
-          y: Math.round(y),
-          width: Math.round(width),
-          height: Math.round(height)
-        }))
-      : [],
+    image_overlays:
+      options.includeSaveFields || shouldBakeImageOverlaysInPreview.value
+        ? mapImageOverlaysPayload()
+        : [],
+    caption_settings: buildCaptionSettingsPayload(),
     watermark: buildWatermarkPayload()
   }
 
   if (options.includeSaveFields) {
+    payload.photo_caption = {
+      enabled: photoCaptionApplied.value !== null,
+      number: Math.max(1, Math.round(photoCaptionApplied.value?.number || 1)),
+      description: photoCaptionApplied.value?.description || ''
+    }
     payload.zoom_layout = buildZoomLayoutPayload()
     payload.save_mode = saveMode.value
     payload.output_format = saveFormat.value
@@ -6574,6 +7219,8 @@ const syncStateAfterSave = (url) => {
   blurSize.value = { width: 0, height: 0 }
   blurShapeMode.value = 'rectangle'
   committedBlurRegion.value = null
+  committedBlurMask.value = null
+  blurApplyGlobal.value = false
   clearBlurBrushMask()
   showPixelateRegion.value = false
   pixelateShapeMode.value = 'rectangle'
@@ -6581,6 +7228,8 @@ const syncStateAfterSave = (url) => {
   pixelateStart.value = { x: 0, y: 0 }
   pixelateSize.value = { width: 0, height: 0 }
   committedPixelateRegion.value = null
+  committedPixelateMask.value = null
+  pixelateApplyGlobal.value = false
   drawings.value = []
   drawingTool.value = null
   penDraftPoints.value = []
@@ -6608,6 +7257,11 @@ const syncStateAfterSave = (url) => {
   textBgOpacity.value = 75
   textBgPadding.value = 6
   imageOverlays.value = []
+  selectedOverlayId.value = null
+  captionSettings.value = createDefaultCaptionSettings()
+  showCustomCaptionPrefix.value = false
+  photoCaptionApplied.value = null
+  photoCaptionDraft.value = null
   watermarkApplied.value = null
   watermarkDraft.value = null
   showSavePanel.value = false
@@ -6760,7 +7414,11 @@ const hasChanges = computed(() => {
          rotation.value !== 0 ||
          committedCrop.value !== null ||
          committedBlurRegion.value !== null ||
+         committedBlurMask.value !== null ||
+         blurApplyGlobal.value ||
          committedPixelateRegion.value !== null ||
+         committedPixelateMask.value !== null ||
+         pixelateApplyGlobal.value ||
          showCrop.value ||
          showBlurRegion.value ||
          blurMaskDirty.value ||
@@ -6769,6 +7427,7 @@ const hasChanges = computed(() => {
          texts.value.length > 0 ||
          drawings.value.length > 0 ||
          imageOverlays.value.length > 0 ||
+         photoCaptionApplied.value !== null ||
          watermarkApplied.value ||
          zoomCallouts.value.length > 0
 })

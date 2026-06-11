@@ -15,6 +15,7 @@ Route::middleware(config('image-editor.routes.browser_middleware', ['web']))->gr
     Route::post('/camera/blank', [CameraController::class, 'createBlank']);
     Route::delete('/camera/photos', [CameraController::class, 'deletePhoto']);
     Route::post('/camera/photos/duplicate', [CameraController::class, 'duplicatePhoto']);
+    Route::post('/camera/photos/reorder', [CameraController::class, 'reorderPhotos']);
     Route::post('/image/edit', [ImageController::class, 'edit'])->name('image-editor.edit');
     Route::post('/image/preview', [ImageController::class, 'preview'])->name('image-editor.preview');
 });

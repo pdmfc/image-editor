@@ -74,17 +74,113 @@
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                d="M9 13h6m-3-3v6M6 4h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2z"
               />
             </svg>
           </button>
         </div>
 
         <div class="border-b border-gray-100 px-3 py-2">
-          <p class="text-xs font-medium text-gray-500">
-            Imagens
-            <span v-if="!loading && photos.length">({{ photos.length }})</span>
-          </p>
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs font-medium text-gray-500">
+              Imagens
+              <span v-if="!loading && photos.length">({{ photos.length }})</span>
+            </p>
+            <div v-if="!loading && photos.length > 0" class="flex items-center gap-0.5">
+              <button
+                type="button"
+                class="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                :class="{ 'bg-violet-50 text-violet-600 ring-1 ring-violet-200': reorderMode }"
+                :title="reorderMode ? 'Sair da ordenação' : 'Ordenar imagens por prioridade'"
+                @click="toggleReorderMode"
+              >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                :class="{ 'bg-blue-50 text-blue-600 ring-1 ring-blue-200': bulkSelectMode }"
+                :title="bulkSelectMode ? 'Sair da seleção' : 'Selecionar várias para eliminar'"
+                @click="toggleBulkSelectMode"
+              >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div
+            v-if="reorderMode"
+            class="mt-2 space-y-1"
+          >
+            <p class="text-[10px] leading-snug text-violet-700">
+              Arraste para a linha roxa entre imagens. Com 2 ou mais selecionadas, o grupo move-se em conjunto.
+              <span v-if="reorderSaving" class="text-violet-500"> A guardar…</span>
+            </p>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[10px] font-medium text-violet-800">
+                {{ reorderSelectionCount }} para mover
+              </span>
+              <button
+                type="button"
+                class="rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-50"
+                @click="selectAllReorder"
+              >
+                Todas
+              </button>
+              <button
+                type="button"
+                class="rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-50"
+                :disabled="reorderSelectionCount === 0"
+                @click="clearReorderSelection"
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
+          <div
+            v-if="bulkSelectMode"
+            class="mt-2 flex flex-wrap items-center gap-1.5"
+          >
+            <span class="text-[10px] font-medium text-gray-600">
+              {{ bulkSelectedCount }} selecionada{{ bulkSelectedCount === 1 ? '' : 's' }}
+            </span>
+            <button
+              type="button"
+              class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+              @click="selectAllBulk"
+            >
+              Todas
+            </button>
+            <button
+              type="button"
+              class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+              :disabled="bulkSelectedCount === 0"
+              @click="clearBulkSelection"
+            >
+              Limpar
+            </button>
+            <button
+              type="button"
+              class="ml-auto rounded-md bg-red-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="bulkSelectedCount === 0 || bulkDeleting"
+              @click="handleConfirmBulkDelete"
+            >
+              {{ bulkDeleting ? 'A eliminar…' : 'Eliminar' }}
+            </button>
+          </div>
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto p-2">
@@ -94,27 +190,82 @@
           <p v-else-if="photos.length === 0" class="px-2 py-6 text-center text-sm text-gray-500">
             Nenhuma imagem. Carregue um ficheiro ou tire uma foto.
           </p>
-          <ul v-else class="space-y-2">
-            <li
-              v-for="(photo, index) in photos"
-              :key="photo.path || `${photo.filename}-${photo.timestamp ?? index}`"
-            >
-              <button
-                type="button"
-                class="group relative w-full overflow-hidden rounded-lg border-2 text-left transition"
-                :class="[
-                  selectedPhoto?.filename === photo.filename
-                    ? 'border-blue-500 ring-2 ring-blue-200'
-                    : photo.is_blank_canvas
-                      ? 'border-sky-400 hover:border-sky-500'
-                      : 'border-gray-200 hover:border-gray-300',
-                  canDragPhotoToCanvas(photo) ? 'cursor-grab active:cursor-grabbing' : ''
-                ]"
-                :draggable="canDragPhotoToCanvas(photo)"
-                @click="selectPhoto(photo)"
-                @dragstart="onThumbnailDragStart($event, photo)"
-                @dragend="onThumbnailDragEnd"
+          <ul
+            v-else
+            ref="galleryListRef"
+            class="space-y-2"
+          >
+            <template v-for="(photo, index) in photos" :key="photo.filename">
+              <li
+                v-if="reorderMode && reorderInsertAt === index"
+                class="pointer-events-none mx-1 flex items-center gap-1 py-0.5"
+                aria-hidden="true"
               >
+                <span class="h-1 flex-1 rounded-full bg-violet-500 shadow-sm" />
+              </li>
+              <li
+                data-reorder-item
+                class="rounded-lg transition"
+                :class="{ 'opacity-45': isInReorderDragBlock(photo.filename) }"
+              >
+              <div
+                role="button"
+                tabindex="0"
+                class="group relative w-full overflow-hidden rounded-lg border-2 text-left transition select-none"
+                :class="[
+                  bulkSelectMode && isBulkSelected(photo.filename)
+                    ? 'border-red-400 ring-2 ring-red-200'
+                    : reorderMode && isReorderSelected(photo.filename)
+                      ? 'border-violet-400 ring-2 ring-violet-200'
+                      : selectedPhoto?.filename === photo.filename
+                        ? 'border-blue-500 ring-2 ring-blue-200'
+                        : photo.is_blank_canvas
+                          ? 'border-sky-400 hover:border-sky-500'
+                          : 'border-gray-200 hover:border-gray-300',
+                  reorderMode || isThumbnailDraggable(photo)
+                    ? 'cursor-grab active:cursor-grabbing touch-none'
+                    : 'cursor-pointer'
+                ]"
+                :draggable="!reorderMode && isThumbnailDraggable(photo)"
+                @click="onThumbnailClick(photo)"
+                @keydown.enter.prevent="onThumbnailClick(photo)"
+                @keydown.space.prevent="onThumbnailClick(photo)"
+                @pointerdown="onReorderPointerDown(index, $event)"
+                @dragstart="onGalleryThumbnailDragStart(index, $event, photo)"
+                @dragend="onGalleryThumbnailDragEnd"
+              >
+                <label
+                  v-if="reorderMode"
+                  class="pointer-events-auto absolute left-1.5 top-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-white/95 shadow ring-1 ring-violet-200"
+                  @click.stop
+                  @mousedown.stop
+                  @dragstart.prevent
+                >
+                  <input
+                    type="checkbox"
+                    class="h-3.5 w-3.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                    :checked="isReorderSelected(photo.filename)"
+                    @change="toggleReorderSelection(photo.filename)"
+                  />
+                </label>
+                <span
+                  v-if="reorderMode"
+                  class="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded bg-violet-600/90 px-1.5 py-0.5 text-[9px] font-semibold text-white shadow"
+                >
+                  {{ index + 1 }}
+                </span>
+                <label
+                  v-if="bulkSelectMode"
+                  class="pointer-events-auto absolute left-1.5 top-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-white/95 shadow ring-1 ring-gray-200"
+                  @click.stop
+                >
+                  <input
+                    type="checkbox"
+                    class="h-3.5 w-3.5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    :checked="isBulkSelected(photo.filename)"
+                    @change="toggleBulkSelection(photo.filename)"
+                  />
+                </label>
                 <div
                   class="relative aspect-[4/3] w-full overflow-hidden"
                   :class="photo.is_blank_canvas ? 'thumbnail-checker' : 'bg-gray-100'"
@@ -135,6 +286,7 @@
                   {{ photo.filename }}
                 </p>
                 <div
+                  v-if="!bulkSelectMode && !reorderMode"
                   class="pointer-events-none absolute inset-x-0 top-0 flex justify-end gap-1 p-1.5 opacity-0 transition-opacity group-hover:opacity-100"
                 >
                   <button
@@ -149,7 +301,7 @@
                         stroke-linecap="round"
                         stroke-linejoin="round"
                         stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                       />
                     </svg>
                   </button>
@@ -181,7 +333,15 @@
                 >
                   <p class="truncate text-[10px] text-white" :title="photo.filename">{{ photo.filename }}</p>
                 </div>
-              </button>
+              </div>
+              </li>
+            </template>
+            <li
+              v-if="reorderMode && reorderInsertAt === photos.length"
+              class="pointer-events-none mx-1 flex items-center gap-1 py-0.5"
+              aria-hidden="true"
+            >
+              <span class="h-1 flex-1 rounded-full bg-violet-500 shadow-sm" />
             </li>
           </ul>
         </div>
@@ -203,8 +363,11 @@
           :image-url="selectedPhoto.url"
           :photo="selectedPhoto"
           :show-use-in-form="asModal"
+          :gallery-index="selectedPhotoIndex"
+          :gallery-total="photos.length"
           @save="handleSaveEdit"
           @use-in-form="usePhotoInForm"
+          @gallery-navigate="onGalleryNavigate"
           @error="(msg) => showNotification('error', 'Erro', msg)"
         />
         <div
@@ -234,6 +397,33 @@
       :qr-code="qrCodeData"
       @close="closeQrCode"
     />
+
+    <Teleport to="body">
+      <div
+        v-if="reorderDragPreview.visible"
+        class="reorder-drag-ghost pointer-events-none fixed z-[100001]"
+        :style="{
+          left: `${reorderDragPreview.x}px`,
+          top: `${reorderDragPreview.y}px`
+        }"
+      >
+        <div class="relative w-24 overflow-hidden rounded-lg border-2 border-violet-500 bg-white shadow-2xl ring-2 ring-violet-200/80">
+          <img
+            v-if="reorderDragPreview.imageUrl"
+            :src="reorderDragPreview.imageUrl"
+            alt=""
+            class="aspect-[4/3] h-auto w-full object-cover"
+            draggable="false"
+          />
+          <span
+            v-if="reorderDragPreview.count > 1"
+            class="absolute right-1 top-1 rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white shadow"
+          >
+            {{ reorderDragPreview.count }}
+          </span>
+        </div>
+      </div>
+    </Teleport>
 
     <div class="pointer-events-none fixed inset-0 z-50 flex items-end justify-center px-4 py-6 sm:p-6">
       <div class="max-w-sm w-full">
@@ -321,6 +511,25 @@ const uploading = ref(false)
 const creatingBlank = ref(false)
 const imageEditorRef = ref(null)
 const isDropTargetActive = ref(false)
+const bulkSelectMode = ref(false)
+const bulkSelectedFilenames = ref([])
+const bulkDeleting = ref(false)
+const reorderMode = ref(false)
+const galleryListRef = ref(null)
+const reorderDragIndex = ref(null)
+const reorderDragFilenames = ref([])
+const reorderInsertAt = ref(null)
+const reorderSaving = ref(false)
+const reorderSelection = ref([])
+const reorderPointerActive = ref(false)
+const reorderSuppressClick = ref(false)
+const reorderDragPreview = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  imageUrl: '',
+  count: 1
+})
 
 const DRAG_PHOTO_MIME = 'application/x-image-editor-photo'
 
@@ -359,6 +568,21 @@ const onThumbnailDragStart = (event, photo) => {
 
 const onThumbnailDragEnd = () => {
   isDropTargetActive.value = false
+}
+
+const isThumbnailDraggable = (photo) =>
+  canDragPhotoToCanvas(photo) && !bulkSelectMode.value && !reorderMode.value
+
+const onGalleryThumbnailDragStart = (index, event, photo) => {
+  if (reorderMode.value) {
+    event.preventDefault()
+    return
+  }
+  onThumbnailDragStart(event, photo)
+}
+
+const onGalleryThumbnailDragEnd = () => {
+  onThumbnailDragEnd()
 }
 
 const onEditorDragOver = (event) => {
@@ -441,20 +665,30 @@ const withCacheBustedUrl = (photo) => {
 }
 
 const dedupePhotosByFilename = (list) => {
-  const byKey = new Map()
+  const byFilename = new Map()
   for (const photo of list) {
-    const key = photo?.path || photo?.filename
+    const key = photo?.filename
     if (!key) {
       continue
     }
-    const previous = byKey.get(key)
+    const previous = byFilename.get(key)
     if (!previous || (photo.timestamp ?? 0) >= (previous.timestamp ?? 0)) {
-      byKey.set(key, photo)
+      byFilename.set(key, photo)
     }
   }
-  return [...byKey.values()].sort(
-    (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0)
-  )
+
+  const seen = new Set()
+  const result = []
+  for (const photo of list) {
+    const key = photo?.filename
+    if (!key || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    result.push(byFilename.get(key))
+  }
+
+  return result
 }
 
 const selectedPhotoEditorKey = computed(() => {
@@ -520,6 +754,318 @@ const selectPhoto = (photo) => {
   applyPhotoSelection(photo)
 }
 
+const bulkSelectedCount = computed(() => bulkSelectedFilenames.value.length)
+
+const isBulkSelected = (filename) => bulkSelectedFilenames.value.includes(filename)
+
+const toggleBulkSelection = (filename) => {
+  if (isBulkSelected(filename)) {
+    bulkSelectedFilenames.value = bulkSelectedFilenames.value.filter((name) => name !== filename)
+  } else {
+    bulkSelectedFilenames.value = [...bulkSelectedFilenames.value, filename]
+  }
+}
+
+const toggleBulkSelectMode = () => {
+  bulkSelectMode.value = !bulkSelectMode.value
+  if (bulkSelectMode.value) {
+    reorderMode.value = false
+    resetReorderDragState()
+  }
+  if (!bulkSelectMode.value) {
+    bulkSelectedFilenames.value = []
+  }
+}
+
+const toggleReorderMode = () => {
+  reorderMode.value = !reorderMode.value
+  if (reorderMode.value) {
+    bulkSelectMode.value = false
+    bulkSelectedFilenames.value = []
+  } else {
+    reorderSelection.value = []
+    resetReorderDragState()
+  }
+}
+
+const reorderSelectionCount = computed(() => reorderSelection.value.length)
+
+const isReorderSelected = (filename) => reorderSelection.value.includes(filename)
+
+const toggleReorderSelection = (filename) => {
+  if (isReorderSelected(filename)) {
+    reorderSelection.value = reorderSelection.value.filter((name) => name !== filename)
+  } else {
+    reorderSelection.value = [...reorderSelection.value, filename]
+  }
+}
+
+const selectAllReorder = () => {
+  reorderSelection.value = photos.value.map((photo) => photo.filename)
+}
+
+const clearReorderSelection = () => {
+  reorderSelection.value = []
+}
+
+const getReorderDragFilenames = (dragIndex) => {
+  const dragged = photos.value[dragIndex]?.filename
+  if (!dragged) {
+    return []
+  }
+
+  const selected = photos.value
+    .filter((photo) => reorderSelection.value.includes(photo.filename))
+    .map((photo) => photo.filename)
+
+  if (selected.length >= 2) {
+    return selected
+  }
+
+  return [dragged]
+}
+
+const isInReorderDragBlock = (filename) => {
+  if (reorderDragFilenames.value.length > 0) {
+    return reorderDragFilenames.value.includes(filename)
+  }
+  if (reorderDragIndex.value === null) {
+    return false
+  }
+  return photos.value[reorderDragIndex.value]?.filename === filename
+}
+
+const getBlockInsertTarget = (list, blockFilenames, insertAt) => {
+  const blockSet = new Set(blockFilenames)
+  let target = 0
+  for (let i = 0; i < Math.min(insertAt, list.length); i++) {
+    if (!blockSet.has(list[i].filename)) {
+      target++
+    }
+  }
+  return target
+}
+
+const movePhotosBlock = (list, blockFilenames, insertAt) => {
+  const blockSet = new Set(blockFilenames)
+  const block = list.filter((photo) => blockSet.has(photo.filename))
+  const remaining = list.filter((photo) => !blockSet.has(photo.filename))
+  const target = getBlockInsertTarget(list, blockFilenames, insertAt)
+
+  return [...remaining.slice(0, target), ...block, ...remaining.slice(target)]
+}
+
+const hideReorderDragPreview = () => {
+  reorderDragPreview.value.visible = false
+}
+
+const resetReorderDragState = () => {
+  reorderDragIndex.value = null
+  reorderDragFilenames.value = []
+  reorderInsertAt.value = null
+  reorderPointerActive.value = false
+  hideReorderDragPreview()
+}
+
+const resolveReorderInsertAt = (clientY, listEl) => {
+  const items = listEl.querySelectorAll('[data-reorder-item]')
+  if (!items.length) {
+    return 0
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    const rect = items[i].getBoundingClientRect()
+    const midpoint = rect.top + rect.height / 2
+    if (clientY < midpoint) {
+      return i
+    }
+  }
+
+  return items.length
+}
+
+const applyReorderMove = async (from, insertAt, dragFilenames) => {
+  if (!reorderMode.value || from === null || insertAt === null) {
+    return false
+  }
+
+  if (dragFilenames.length >= 2) {
+    const list = photos.value
+    const orderKey = (items) => items.map((photo) => photo.filename).join('\0')
+    const reordered = movePhotosBlock(list, dragFilenames, insertAt)
+
+    if (orderKey(reordered) === orderKey(list)) {
+      return false
+    }
+
+    photos.value = reordered
+    await persistGalleryOrder()
+    return true
+  }
+
+  if (insertAt === from || insertAt === from + 1) {
+    return false
+  }
+
+  const updated = [...photos.value]
+  const [item] = updated.splice(from, 1)
+  let target = insertAt
+  if (from < insertAt) {
+    target -= 1
+  }
+  updated.splice(target, 0, item)
+  photos.value = updated
+  await persistGalleryOrder()
+  return true
+}
+
+const onReorderPointerDown = (index, event) => {
+  if (!reorderMode.value) {
+    return
+  }
+  if (event.pointerType === 'mouse' && event.button !== 0) {
+    return
+  }
+  if (event.target.closest('label, input, button')) {
+    return
+  }
+
+  const listEl = galleryListRef.value
+  if (!listEl) {
+    return
+  }
+
+  const dragFilenames = getReorderDragFilenames(index)
+  const startX = event.clientX
+  const startY = event.clientY
+  let moved = false
+  const primaryPhoto =
+    photos.value.find((photo) => photo.filename === dragFilenames[0]) ?? photos.value[index]
+
+  reorderPointerActive.value = true
+  reorderDragIndex.value = index
+  reorderDragFilenames.value = dragFilenames
+  reorderInsertAt.value = index
+  reorderDragPreview.value = {
+    visible: false,
+    x: startX,
+    y: startY,
+    imageUrl: primaryPhoto?.url ?? '',
+    count: dragFilenames.length
+  }
+
+  const onMove = (moveEvent) => {
+    if (!reorderPointerActive.value) {
+      return
+    }
+    if (
+      !moved &&
+      (Math.abs(moveEvent.clientY - startY) > 4 || Math.abs(moveEvent.clientX - startX) > 4)
+    ) {
+      moved = true
+    }
+    reorderDragPreview.value = {
+      ...reorderDragPreview.value,
+      visible: moved,
+      x: moveEvent.clientX,
+      y: moveEvent.clientY
+    }
+    reorderInsertAt.value = resolveReorderInsertAt(moveEvent.clientY, listEl)
+  }
+
+  const onUp = async (upEvent) => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    window.removeEventListener('pointercancel', onUp)
+
+    if (!reorderPointerActive.value) {
+      return
+    }
+
+    const insertAt = resolveReorderInsertAt(upEvent.clientY, listEl)
+    const from = index
+    const filenames = [...dragFilenames]
+
+    reorderPointerActive.value = false
+    resetReorderDragState()
+
+    if (moved) {
+      reorderSuppressClick.value = true
+      window.setTimeout(() => {
+        reorderSuppressClick.value = false
+      }, 0)
+      await applyReorderMove(from, insertAt, filenames)
+    }
+  }
+
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointercancel', onUp)
+  event.preventDefault()
+}
+
+const persistGalleryOrder = async () => {
+  if (!requireUserId()) {
+    return
+  }
+
+  const selectedFilename = selectedPhoto.value?.filename
+  reorderSaving.value = true
+
+  try {
+    await axios.post('/api/camera/photos/reorder', {
+      filenames: photos.value.map((photo) => photo.filename),
+      ...userParams()
+    })
+  } catch (error) {
+    console.error('Erro ao guardar ordem das fotos:', error)
+    await loadPhotos({ autoSelectFirst: false })
+    syncSelectedPhotoFromList(selectedFilename)
+    showNotification('error', 'Erro', 'Não foi possível guardar a ordem das imagens')
+  } finally {
+    reorderSaving.value = false
+  }
+}
+
+const selectAllBulk = () => {
+  bulkSelectedFilenames.value = photos.value.map((photo) => photo.filename)
+}
+
+const clearBulkSelection = () => {
+  bulkSelectedFilenames.value = []
+}
+
+const onThumbnailClick = (photo) => {
+  if (reorderSuppressClick.value) {
+    return
+  }
+  if (bulkSelectMode.value) {
+    toggleBulkSelection(photo.filename)
+    return
+  }
+  selectPhoto(photo)
+}
+
+const selectedPhotoIndex = computed(() => {
+  const filename = selectedPhoto.value?.filename
+  if (!filename) {
+    return -1
+  }
+  return photos.value.findIndex((photo) => photo.filename === filename)
+})
+
+const onGalleryNavigate = (direction) => {
+  const index = selectedPhotoIndex.value
+  if (index < 0) {
+    return
+  }
+  const nextIndex = direction === 'next' ? index + 1 : index - 1
+  if (nextIndex < 0 || nextIndex >= photos.value.length) {
+    return
+  }
+  selectPhoto(photos.value[nextIndex])
+}
+
 const showNotification = (
   type,
   title,
@@ -540,7 +1086,7 @@ const showNotification = (
       title,
       message,
       showActions,
-      photoToDelete: action === 'delete' ? photoToDelete : null,
+      photoToDelete: action === 'delete' || action === 'delete-bulk' ? photoToDelete : null,
       action,
       confirmLabel,
       cancelLabel,
@@ -561,6 +1107,9 @@ const onNotificationConfirm = () => {
   }
   if (action === 'delete') {
     confirmDelete(notification.value.photoToDelete)
+  }
+  if (action === 'delete-bulk') {
+    confirmBulkDelete(notification.value.photoToDelete)
   }
 }
 
@@ -700,6 +1249,46 @@ const handleConfirmDelete = (photo) => {
   )
 }
 
+const handleConfirmBulkDelete = () => {
+  const filenames = [...bulkSelectedFilenames.value]
+  if (filenames.length === 0) {
+    return
+  }
+
+  const selectedFilename = selectedPhoto.value?.filename
+  if (
+    selectedFilename &&
+    filenames.includes(selectedFilename) &&
+    editorHasUnsavedChanges()
+  ) {
+    showNotification(
+      'warning',
+      'Alterações não guardadas',
+      'Uma das imagens selecionadas tem alterações por guardar. Se continuar, perde o que ainda não guardou.',
+      true,
+      filenames,
+      0,
+      'delete-bulk',
+      'Eliminar mesmo assim',
+      'Cancelar'
+    )
+    return
+  }
+
+  const label = filenames.length === 1 ? 'esta foto' : `estas ${filenames.length} fotos`
+  showNotification(
+    'warning',
+    'Confirmar exclusão',
+    `Tem a certeza de que deseja eliminar ${label}?`,
+    true,
+    filenames,
+    0,
+    'delete-bulk',
+    'Eliminar',
+    'Cancelar'
+  )
+}
+
 const confirmDelete = async (photo) => {
   if (!requireUserId()) {
     return
@@ -719,6 +1308,69 @@ const confirmDelete = async (photo) => {
   } catch (error) {
     console.error('Erro ao excluir foto:', error)
     showNotification('error', 'Erro', 'Erro ao excluir foto')
+  }
+}
+
+const confirmBulkDelete = async (filenames) => {
+  if (!requireUserId() || !Array.isArray(filenames) || filenames.length === 0) {
+    return
+  }
+
+  const selectedFilename = selectedPhoto.value?.filename
+  const deletingSelected = selectedFilename && filenames.includes(selectedFilename)
+  bulkDeleting.value = true
+
+  try {
+    const response = await axios.delete('/api/camera/photos', {
+      data: { filenames, ...userParams() }
+    })
+    const deletedCount = response.data?.deleted_count ?? filenames.length
+    const failedCount = response.data?.failed_count ?? 0
+
+    bulkSelectedFilenames.value = []
+    bulkSelectMode.value = false
+
+    await loadPhotos({ autoSelectFirst: deletingSelected })
+
+    if (deletingSelected) {
+      if (photos.value.length > 0) {
+        selectedPhoto.value = photos.value[0]
+      } else {
+        selectedPhoto.value = null
+      }
+    }
+
+    if (failedCount > 0) {
+      showNotification(
+        'warning',
+        'Eliminação parcial',
+        `${deletedCount} eliminada(s), ${failedCount} falharam.`
+      )
+      return
+    }
+
+    const message =
+      deletedCount === 1
+        ? 'Foto eliminada com sucesso'
+        : `${deletedCount} fotos eliminadas com sucesso`
+    showNotification('success', 'Sucesso', message)
+  } catch (error) {
+    console.error('Erro ao eliminar fotos:', error)
+    const partial = error.response?.data?.deleted_count
+    if (partial > 0) {
+      bulkSelectedFilenames.value = []
+      bulkSelectMode.value = false
+      await loadPhotos({ autoSelectFirst: true })
+      showNotification(
+        'warning',
+        'Eliminação parcial',
+        `${partial} eliminada(s); algumas falharam.`
+      )
+      return
+    }
+    showNotification('error', 'Erro', 'Erro ao eliminar as fotos selecionadas')
+  } finally {
+    bulkDeleting.value = false
   }
 }
 
@@ -863,6 +1515,12 @@ onMounted(() => {
 
 .toolbar-icon-svg {
   @apply h-[18px] w-[18px];
+}
+
+.reorder-drag-ghost {
+  transform: translate(14px, 14px);
+  opacity: 0.95;
+  will-change: transform, left, top;
 }
 
 .thumbnail-checker {

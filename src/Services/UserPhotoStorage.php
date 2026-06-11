@@ -95,4 +95,100 @@ class UserPhotoStorage
     {
         return CallbackRoute::resolvedUrl($userId);
     }
+
+    public function galleryOrderRelativePath(): string
+    {
+        return '.gallery-order.json';
+    }
+
+    public function galleryOrderPath(string|int $userId): string
+    {
+        return $this->directory($userId).'/'.$this->galleryOrderRelativePath();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function readGalleryOrder(string|int $userId): array
+    {
+        $path = $this->galleryOrderPath($userId);
+
+        if (! Storage::disk($this->disk())->exists($path)) {
+            return [];
+        }
+
+        $json = Storage::disk($this->disk())->get($path);
+        $data = json_decode($json, true);
+
+        if (! is_array($data)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            fn ($name) => $this->safeFilename((string) $name),
+            $data
+        )));
+    }
+
+    /**
+     * @param list<string> $filenames
+     * @throws \JsonException
+     */
+    public function writeGalleryOrder(string|int $userId, array $filenames): void
+    {
+        $this->ensureDirectory($userId);
+
+        $filenames = array_values(array_unique(array_filter(array_map(
+            fn ($name) => $this->safeFilename((string) $name),
+            $filenames
+        ))));
+
+        Storage::disk($this->disk())->put(
+            $this->galleryOrderPath($userId),
+            json_encode($filenames, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
+        );
+    }
+
+    public function deleteGalleryOrder(string|int $userId): void
+    {
+        $path = $this->galleryOrderPath($userId);
+
+        if (Storage::disk($this->disk())->exists($path)) {
+            Storage::disk($this->disk())->delete($path);
+        }
+    }
+
+    /**
+     * @throws \JsonException
+     */
+    public function removeFromGalleryOrder(string|int $userId, string $filename): void
+    {
+        $filename = $this->safeFilename($filename);
+        $order = $this->readGalleryOrder($userId);
+        $order = array_values(array_filter($order, fn (string $name): bool => $name !== $filename));
+
+        if ($order === []) {
+            $this->deleteGalleryOrder($userId);
+
+            return;
+        }
+
+        $this->writeGalleryOrder($userId, $order);
+    }
+
+    /**
+     * @throws \JsonException
+     */
+    public function appendToGalleryOrder(string|int $userId, string $filename): void
+    {
+        $filename = $this->safeFilename($filename);
+        $order = $this->readGalleryOrder($userId);
+
+        if (in_array($filename, $order, true)) {
+            return;
+        }
+
+        $order[] = $filename;
+        $this->writeGalleryOrder($userId, $order);
+    }
 }

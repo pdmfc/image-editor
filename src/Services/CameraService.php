@@ -22,6 +22,23 @@ class CameraService
     public function getPhotos(string|int $userId): array
     {
         try {
+            $result = $this->listPhotosUnsorted($userId);
+
+            if (isset($result['error'])) {
+                return $result;
+            }
+
+            return [
+                'photos' => $this->sortPhotosByGalleryOrder($result['photos'] ?? [], $userId),
+            ];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    private function listPhotosUnsorted(string|int $userId): array
+    {
+        try {
             $this->storage->ensureDirectory($userId);
             $dir = $this->storage->directory($userId);
             $files = Storage::disk($this->disk())->files($dir);
@@ -47,12 +64,22 @@ class CameraService
                 ];
             }
 
-            usort($photos, fn (array $a, array $b): int => ($b['timestamp'] ?? 0) <=> ($a['timestamp'] ?? 0));
-
             return ['photos' => $photos];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * @throws \JsonException
+     */
+    private function trackNewPhotoInGalleryOrder(string|int $userId, string $filename): void
+    {
+        if ($this->storage->readGalleryOrder($userId) === []) {
+            return;
+        }
+
+        $this->storage->appendToGalleryOrder($userId, $filename);
     }
 
     public function storeCallbackFiles(string|int $userId, array $payload): array
@@ -81,6 +108,7 @@ class CameraService
                 if (Storage::disk($this->disk())->put($this->storage->filePath($userId, $name), $binary)) {
                     $saved++;
                     $newFilenames[] = $name;
+                    $this->trackNewPhotoInGalleryOrder($userId, $name);
                 }
             }
 
@@ -111,6 +139,8 @@ class CameraService
             $path = $this->storage->filePath($userId, $filename);
 
             if (Storage::disk($this->disk())->put($path, $photoData)) {
+                $this->trackNewPhotoInGalleryOrder($userId, $filename);
+
                 return [
                     'success' => true,
                     'filename' => $filename,
@@ -154,6 +184,7 @@ class CameraService
                 return ['error' => 'Falha ao guardar a imagem'];
             }
 
+            $this->trackNewPhotoInGalleryOrder($userId, $filename);
             $fullPath = Storage::disk($this->disk())->path($stored);
 
             return [
@@ -192,6 +223,7 @@ class CameraService
                 return ['error' => 'Falha ao criar a folha em branco'];
             }
 
+            $this->trackNewPhotoInGalleryOrder($userId, $filename);
             $fullPath = Storage::disk($this->disk())->path($path);
 
             return [
@@ -233,6 +265,7 @@ class CameraService
                 return ['error' => 'Falha ao duplicar a foto'];
             }
 
+            $this->trackNewPhotoInGalleryOrder($userId, $newFilename);
             $fullPath = Storage::disk($this->disk())->path($newPath);
 
             return [
@@ -259,10 +292,132 @@ class CameraService
             }
 
             if (Storage::disk($this->disk())->delete($filepath)) {
+                $this->storage->removeFromGalleryOrder($userId, $filename);
+
                 return ['success' => true];
             }
 
             return ['error' => 'Falha ao excluir foto'];
+        } catch (\Exception $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * @param  list<string>  $filenames
+     */
+    public function deletePhotos(array $filenames, string|int $userId): array
+    {
+        $filenames = array_values(array_unique(array_filter(array_map(
+            static fn ($name) => is_string($name) ? trim($name) : '',
+            $filenames
+        ))));
+
+        if ($filenames === []) {
+            return ['error' => 'Nenhum ficheiro indicado para eliminar.'];
+        }
+
+        $deleted = [];
+        $errors = [];
+
+        foreach ($filenames as $filename) {
+            $result = $this->deletePhoto($filename, $userId);
+
+            if (isset($result['error'])) {
+                $errors[] = [
+                    'filename' => $filename,
+                    'error' => $result['error'],
+                ];
+            } else {
+                $deleted[] = $filename;
+            }
+        }
+
+        return [
+            'success' => $errors === [],
+            'deleted' => $deleted,
+            'errors' => $errors,
+            'deleted_count' => count($deleted),
+            'failed_count' => count($errors),
+        ];
+    }
+
+    /**
+     * @param  list<array{filename: string, url: string, path: string, timestamp: int|float, is_blank_canvas: bool}>  $photos
+     * @return list<array{filename: string, url: string, path: string, timestamp: int|float, is_blank_canvas: bool}>
+     */
+    private function sortPhotosByGalleryOrder(array $photos, string|int $userId): array
+    {
+        $order = $this->storage->readGalleryOrder($userId);
+
+        if ($order === []) {
+            usort($photos, fn (array $a, array $b): int => ($b['timestamp'] ?? 0) <=> ($a['timestamp'] ?? 0));
+
+            return $photos;
+        }
+
+        $byName = [];
+
+        foreach ($photos as $photo) {
+            $byName[$photo['filename']] = $photo;
+        }
+
+        $sorted = [];
+
+        foreach ($order as $filename) {
+            if (isset($byName[$filename])) {
+                $sorted[] = $byName[$filename];
+                unset($byName[$filename]);
+            }
+        }
+
+        $remaining = array_values($byName);
+        usort($remaining, fn (array $a, array $b): int => ($b['timestamp'] ?? 0) <=> ($a['timestamp'] ?? 0));
+
+        return array_merge($sorted, $remaining);
+    }
+
+    /**
+     * @param  list<string>  $filenames
+     */
+    public function reorderPhotos(string|int $userId, array $filenames): array
+    {
+        try {
+            $filenames = array_values(array_unique(array_filter(array_map(
+                fn ($name) => $this->storage->safeFilename((string) $name),
+                $filenames
+            ))));
+
+            if ($filenames === []) {
+                return ['error' => 'Nenhum ficheiro indicado para ordenar.'];
+            }
+
+            $existing = $this->listPhotosUnsorted($userId);
+
+            if (isset($existing['error'])) {
+                return ['error' => $existing['error']];
+            }
+
+            $photos = $existing['photos'] ?? [];
+            $known = array_column($photos, 'filename');
+            $knownSet = array_flip($known);
+
+            foreach ($filenames as $filename) {
+                if (! isset($knownSet[$filename])) {
+                    return ['error' => "Ficheiro não encontrado: {$filename}"];
+                }
+            }
+
+            if (count($filenames) !== count($known)) {
+                return ['error' => 'A lista de ordenação tem de incluir todas as imagens.'];
+            }
+
+            $this->storage->writeGalleryOrder($userId, $filenames);
+
+            return [
+                'success' => true,
+                'photos' => $this->sortPhotosByGalleryOrder($photos, $userId),
+            ];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
         }

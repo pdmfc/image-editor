@@ -3,7 +3,6 @@
 namespace PDMFC\ImageEditor\Services;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Intervention\Image\Alignment;
 use Intervention\Image\Direction;
 use Intervention\Image\Encoders\JpegEncoder;
@@ -30,7 +29,6 @@ class ImageService
         }
 
         $filename = basename((string) $data->input('image_url'));
-        $relative = $this->storage->filePath($userId, $filename);
         $sourcePath = $this->storage->storagePath($userId, $filename);
 
         if (! file_exists($sourcePath)) {
@@ -39,7 +37,6 @@ class ImageService
 
         return [
             'path' => $sourcePath,
-            'relative' => $relative,
             'filename' => $filename,
             'user_id' => $userId,
         ];
@@ -125,12 +122,13 @@ class ImageService
                 $image->flip(Direction::VERTICAL);
             }
 
+            $this->applyImageOverlays($image, $data);
             $this->applyBlur($image, $data);
             $this->applyPixelate($image, $data);
             $this->applySharpen($image, $data);
-            $this->applyImageOverlays($image, $data);
             (new DrawingApplicator())->apply($image, $data->input('drawings'));
             $this->applyWatermark($image, $data);
+            $image = $this->applyPhotoCaptionBand($image, $data);
             $image = $this->composeZoomLayoutIfPresent($image, $data);
 
             if ($save) {
@@ -167,8 +165,6 @@ class ImageService
                     : new JpegEncoder(quality: $outputQuality);
 
                 $image->encode($encoder)->save($writePath);
-
-                $relativePath = $this->storage->filePath($userId, $targetFilename);
 
                 return [
                     'success' => true,
@@ -332,6 +328,52 @@ class ImageService
     }
 
     /**
+     * Aplica efeito à imagem inteira ou só numa região rectangular (coords naturais).
+     *
+     * @param  callable(ImageInterface): void  $applyGlobal
+     * @param  callable(ImageInterface): void  $applyPatch
+     */
+    private function applyRegionEffect(
+        ImageInterface $image,
+        mixed $region,
+        callable $applyGlobal,
+        callable $applyPatch
+    ): void {
+        if (! is_array($region)) {
+            $applyGlobal($image);
+
+            return;
+        }
+
+        $x = (int) ($region['x'] ?? 0);
+        $y = (int) ($region['y'] ?? 0);
+        $w = (int) ($region['width'] ?? 0);
+        $h = (int) ($region['height'] ?? 0);
+
+        if ($w < 1 || $h < 1) {
+            $applyGlobal($image);
+
+            return;
+        }
+
+        $x = max(0, min($image->width() - 1, $x));
+        $y = max(0, min($image->height() - 1, $y));
+        $w = min($w, $image->width() - $x);
+        $h = min($h, $image->height() - $y);
+
+        if ($w < 1 || $h < 1) {
+            $applyGlobal($image);
+
+            return;
+        }
+
+        $patch = clone $image;
+        $patch->crop($w, $h, $x, $y);
+        $applyPatch($patch);
+        $image->insert($patch, $x, $y, Alignment::TOP_LEFT);
+    }
+
+    /**
      * Desfoque global, numa região (retângulo) ou só onde a máscara (borracha) indica.
      */
     private function applyBlur($image, Request $data): void
@@ -356,39 +398,12 @@ class ImageService
             return;
         }
 
-        $region = $data->input('blur_region');
-        if (! is_array($region)) {
-            $image->blur($blur);
-
-            return;
-        }
-
-        $x = (int) ($region['x'] ?? 0);
-        $y = (int) ($region['y'] ?? 0);
-        $w = (int) ($region['width'] ?? 0);
-        $h = (int) ($region['height'] ?? 0);
-
-        if ($w < 1 || $h < 1) {
-            $image->blur($blur);
-
-            return;
-        }
-
-        $x = max(0, min($image->width() - 1, $x));
-        $y = max(0, min($image->height() - 1, $y));
-        $w = min($w, $image->width() - $x);
-        $h = min($h, $image->height() - $y);
-
-        if ($w < 1 || $h < 1) {
-            $image->blur($blur);
-
-            return;
-        }
-
-        $patch = clone $image;
-        $patch->crop($w, $h, $x, $y);
-        $patch->blur($blur);
-        $image->insert($patch, $x, $y, Alignment::TOP_LEFT);
+        $this->applyRegionEffect(
+            $image,
+            $data->input('blur_region'),
+            fn (ImageInterface $img) => $img->blur($blur),
+            fn (ImageInterface $patch) => $patch->blur($blur)
+        );
     }
 
     private function applyBlurWithMask(ImageInterface $image, string $maskSrc, int $strength): void
@@ -430,39 +445,12 @@ class ImageService
             return;
         }
 
-        $region = $data->input('pixelate_region');
-        if (! is_array($region)) {
-            $image->pixelate($tile);
-
-            return;
-        }
-
-        $x = (int) ($region['x'] ?? 0);
-        $y = (int) ($region['y'] ?? 0);
-        $w = (int) ($region['width'] ?? 0);
-        $h = (int) ($region['height'] ?? 0);
-
-        if ($w < 1 || $h < 1) {
-            $image->pixelate($tile);
-
-            return;
-        }
-
-        $x = max(0, min($image->width() - 1, $x));
-        $y = max(0, min($image->height() - 1, $y));
-        $w = min($w, $image->width() - $x);
-        $h = min($h, $image->height() - $y);
-
-        if ($w < 1 || $h < 1) {
-            $image->pixelate($tile);
-
-            return;
-        }
-
-        $patch = clone $image;
-        $patch->crop($w, $h, $x, $y);
-        $patch->pixelate($tile);
-        $image->insert($patch, $x, $y, Alignment::TOP_LEFT);
+        $this->applyRegionEffect(
+            $image,
+            $data->input('pixelate_region'),
+            fn (ImageInterface $img) => $img->pixelate($tile),
+            fn (ImageInterface $patch) => $patch->pixelate($tile)
+        );
     }
 
     private function applyPixelateWithMask(ImageInterface $image, string $maskSrc, int $tile): void
@@ -845,6 +833,156 @@ class ImageService
         }
 
         return $color;
+    }
+
+    /**
+     * Legenda estilo Word por baixo da foto (faixa branca + texto centrado).
+     */
+    private function applyPhotoCaptionBand(ImageInterface $image, Request $data): ImageInterface
+    {
+        $cap = $data->input('photo_caption');
+        if (! is_array($cap) || empty($cap['enabled'])) {
+            return $image;
+        }
+
+        $config = $this->resolveCaptionConfig($data);
+        $number = max(1, (int) ($cap['number'] ?? 1));
+        $description = trim((string) ($cap['description'] ?? ''));
+        $captionText = $this->formatCaptionText($config, $number, $description);
+
+        if ($captionText === '') {
+            return $image;
+        }
+
+        try {
+            return $this->composeImageWithCaptionBand($image, $captionText, $config);
+        } catch (\Throwable) {
+            return $image;
+        }
+    }
+
+    /**
+     * @return array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}
+     */
+    private function resolveCaptionConfig(Request $data): array
+    {
+        $raw = $data->input('caption_settings');
+        $settings = is_array($raw) ? $raw : [];
+
+        return [
+            'prefix' => trim((string) ($settings['prefix'] ?? 'Fig.')),
+            'separator' => (string) ($settings['separator'] ?? ' — '),
+            'font_size' => max(8.0, min(120.0, (float) ($settings['font_size'] ?? 14))),
+            'band_padding' => max(4, min(80, (int) ($settings['band_padding'] ?? 10))),
+            'color' => (string) ($settings['color'] ?? '#000000'),
+            'bold' => ! empty($settings['bold']),
+        ];
+    }
+
+    /**
+     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}  $config
+     */
+    private function formatCaptionText(array $config, int $number, string $description): string
+    {
+        $prefix = trim($config['prefix']);
+        $numPart = $prefix !== '' ? $prefix.' '.$number : (string) $number;
+        $description = trim($description);
+
+        if ($description === '') {
+            return $numPart;
+        }
+
+        $separator = (string) ($config['separator'] ?? ' — ');
+
+        return $numPart.$separator.$description;
+    }
+
+    /**
+     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}  $config
+     */
+    private function composeImageWithCaptionBand(
+        ImageInterface $image,
+        string $captionText,
+        array $config
+    ): ImageInterface {
+        $fontSize = (float) $config['font_size'];
+        $padding = (int) $config['band_padding'];
+        $imgW = $image->width();
+        $imgH = $image->height();
+        $innerW = max(1, $imgW - (2 * $padding));
+
+        $wrapped = $this->wrapCaptionToWidth($captionText, $fontSize, $innerW);
+        $box = $this->estimateTextBox($wrapped, $fontSize);
+        $bandH = max((int) ceil($fontSize * 2.2), $box['height'] + (2 * $padding));
+
+        $canvas = Image::createImage($imgW, $imgH + $bandH);
+        $canvas->fill('#ffffff');
+        $canvas->insert($image, 0, 0, Alignment::TOP_LEFT);
+
+        $textPayload = [
+            'content' => $wrapped,
+            'size' => $fontSize,
+            'color' => $config['color'],
+            'bold' => $config['bold'],
+            'align' => 'center',
+        ];
+
+        $canvas->text(
+            $wrapped,
+            (int) floor($imgW / 2),
+            $imgH + $padding,
+            function (FontFactory $font) use ($textPayload, $canvas): void {
+                $this->configureTextFont($font, $textPayload, $canvas);
+            }
+        );
+
+        return $canvas;
+    }
+
+    private function wrapCaptionToWidth(string $text, float $fontSize, int $maxWidth): string
+    {
+        if ($maxWidth < 1 || $text === '') {
+            return $text;
+        }
+
+        $charWidth = max(1.0, $fontSize * 0.55);
+        $maxChars = max(1, (int) floor($maxWidth / $charWidth));
+        $out = [];
+
+        foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $paragraph) {
+            $paragraph = trim($paragraph);
+            if ($paragraph === '') {
+                $out[] = '';
+
+                continue;
+            }
+
+            $words = preg_split('/\s+/u', $paragraph) ?: [];
+            $current = '';
+
+            foreach ($words as $word) {
+                if ($word === '') {
+                    continue;
+                }
+
+                $trial = $current === '' ? $word : $current.' '.$word;
+
+                if (mb_strlen($trial) <= $maxChars) {
+                    $current = $trial;
+                } else {
+                    if ($current !== '') {
+                        $out[] = $current;
+                    }
+                    $current = $word;
+                }
+            }
+
+            if ($current !== '') {
+                $out[] = $current;
+            }
+        }
+
+        return implode("\n", $out);
     }
 
     /**

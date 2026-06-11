@@ -1,6 +1,6 @@
 import { computed, ref, unref } from 'vue'
 
-export const DEFAULT_ACTION_BUTTONS = ['upload', 'qrcode', 'camera', 'canvas']
+const DEFAULT_ACTION_BUTTONS = ['upload', 'qrcode', 'camera', 'canvas']
 
 function normalizeActionButtons(list) {
   const source =

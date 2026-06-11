@@ -143,6 +143,34 @@ class CameraController extends Controller
         return response()->json($result);
     }
 
+    public function reorderPhotos(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'user_id' => 'required',
+                'filenames' => 'required|array|min:1',
+                'filenames.*' => 'string',
+            ]);
+
+            $result = $this->cameraService->reorderPhotos(
+                $request->input('user_id'),
+                $request->input('filenames', [])
+            );
+
+            if (isset($result['error'])) {
+                return response()->json($result, 422);
+            }
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            Log::error('Erro ao ordenar fotos:', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
     public function duplicatePhoto(Request $request): JsonResponse
     {
         $request->validate([
@@ -169,12 +197,33 @@ class CameraController extends Controller
         try {
             $request->validate([
                 'user_id' => 'required',
-                'filename' => 'required|string',
+                'filename' => 'sometimes|required_without:filenames|string',
+                'filenames' => 'sometimes|required_without:filename|array|min:1',
+                'filenames.*' => 'string',
             ]);
 
+            $userId = $request->input('user_id');
+
+            if ($request->has('filenames')) {
+                $result = $this->cameraService->deletePhotos(
+                    $request->input('filenames', []),
+                    $userId
+                );
+
+                if (isset($result['error']) && empty($result['deleted'])) {
+                    return response()->json($result, 422);
+                }
+
+                if (! empty($result['errors'])) {
+                    return response()->json($result, 207);
+                }
+
+                return response()->json($result);
+            }
+
             $result = $this->cameraService->deletePhoto(
-                $request->input('filename'),
-                $request->input('user_id')
+                (string) $request->input('filename'),
+                $userId
             );
 
             if (isset($result['error'])) {

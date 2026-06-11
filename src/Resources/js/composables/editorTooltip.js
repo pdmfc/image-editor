@@ -17,10 +17,10 @@ let activeEl = null
 let boundRoot = null
 let scrollListener = null
 
-const getTooltipText = (el) => el.dataset.ieTooltip || el.getAttribute('title') || ''
+const getTooltipText = (el) => el.getAttribute('title') || el.dataset.ieTooltip || ''
 
 const stripNativeTitle = (el) => {
-  const text = el.getAttribute('title')
+  const text = getTooltipText(el)
   if (!text) {
     return
   }
@@ -70,6 +70,10 @@ const onPointerOver = (e) => {
     return
   }
   if (activeEl === target && editorTooltip.visible) {
+    const text = getTooltipText(target)
+    if (text) {
+      editorTooltip.text = text
+    }
     positionTooltip(target)
     return
   }
