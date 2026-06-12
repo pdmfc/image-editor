@@ -88,9 +88,14 @@ class CameraController extends Controller
         $request->validate([
             'user_id' => 'required',
             'photo' => 'required|image|max:25600',
+            'folder_id' => 'nullable|string|max:64',
         ]);
 
-        $result = $this->cameraService->uploadPhoto($request->file('photo'), $request->input('user_id'));
+        $result = $this->cameraService->uploadPhoto(
+            $request->file('photo'),
+            $request->input('user_id'),
+            $request->input('folder_id')
+        );
 
         if (isset($result['error'])) {
             return response()->json($result, 422);
@@ -127,13 +132,15 @@ class CameraController extends Controller
             'width' => 'sometimes|integer|min:400|max:8000',
             'height' => 'sometimes|integer|min:300|max:8000',
             'background' => 'sometimes|string|max:32',
+            'folder_id' => 'nullable|string|max:64',
         ]);
 
         $result = $this->cameraService->createBlankCanvas(
             (int) $request->input('width', 1600),
             (int) $request->input('height', 1200),
             (string) $request->input('background', '#ffffff'),
-            $request->input('user_id')
+            $request->input('user_id'),
+            $request->input('folder_id')
         );
 
         if (isset($result['error'])) {
@@ -150,11 +157,13 @@ class CameraController extends Controller
                 'user_id' => 'required',
                 'filenames' => 'required|array|min:1',
                 'filenames.*' => 'string',
+                'folder_id' => 'nullable|string',
             ]);
 
             $result = $this->cameraService->reorderPhotos(
                 $request->input('user_id'),
-                $request->input('filenames', [])
+                $request->input('filenames', []),
+                $request->input('folder_id')
             );
 
             if (isset($result['error'])) {
@@ -240,5 +249,100 @@ class CameraController extends Controller
 
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    public function createGalleryFolder(Request $request): JsonResponse
+    {
+        if (! config('image-editor.gallery.folders_enabled', false)) {
+            return response()->json(['error' => 'Pastas da galeria desactivadas.'], 404);
+        }
+
+        $request->validate([
+            'user_id' => 'required',
+            'name' => 'required|string|max:80',
+        ]);
+
+        $result = $this->cameraService->createGalleryFolder(
+            $request->input('user_id'),
+            (string) $request->input('name')
+        );
+
+        if (isset($result['error'])) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
+    }
+
+    public function renameGalleryFolder(Request $request, string $folderId): JsonResponse
+    {
+        if (! config('image-editor.gallery.folders_enabled', false)) {
+            return response()->json(['error' => 'Pastas da galeria desactivadas.'], 404);
+        }
+
+        $request->validate([
+            'user_id' => 'required',
+            'name' => 'required|string|max:80',
+        ]);
+
+        $result = $this->cameraService->renameGalleryFolder(
+            $request->input('user_id'),
+            $folderId,
+            (string) $request->input('name')
+        );
+
+        if (isset($result['error'])) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
+    }
+
+    public function deleteGalleryFolder(Request $request, string $folderId): JsonResponse
+    {
+        if (! config('image-editor.gallery.folders_enabled', false)) {
+            return response()->json(['error' => 'Pastas da galeria desactivadas.'], 404);
+        }
+
+        $request->validate([
+            'user_id' => 'required',
+        ]);
+
+        $result = $this->cameraService->deleteGalleryFolder(
+            $request->input('user_id'),
+            $folderId
+        );
+
+        if (isset($result['error'])) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
+    }
+
+    public function movePhotosToFolder(Request $request): JsonResponse
+    {
+        if (! config('image-editor.gallery.folders_enabled', false)) {
+            return response()->json(['error' => 'Pastas da galeria desactivadas.'], 404);
+        }
+
+        $request->validate([
+            'user_id' => 'required',
+            'folder_id' => 'required|string|max:64',
+            'filenames' => 'required|array|min:1',
+            'filenames.*' => 'string',
+        ]);
+
+        $result = $this->cameraService->movePhotosToFolder(
+            $request->input('user_id'),
+            $request->input('filenames', []),
+            (string) $request->input('folder_id')
+        );
+
+        if (isset($result['error'])) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
     }
 }

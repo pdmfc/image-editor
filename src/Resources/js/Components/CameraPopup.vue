@@ -91,8 +91,8 @@
           :message="notification.message"
           :show-actions="notification.showActions"
           :duration="notification.duration"
-          @confirm="confirmDelete(notification.photoToDelete)"
-          @cancel="notification.show = false"
+          @confirm="dismissNotification"
+          @cancel="dismissNotification"
         />
       </div>
     </div>
@@ -129,19 +129,21 @@ const notification = ref({
   title: '',
   message: '',
   showActions: false,
-  duration: 5000,
-  confirmCallback: null
+  duration: 5000
 })
 
-const showNotification = (type, title, message, showActions = false, duration = 5000, confirmCallback = null) => {
+const dismissNotification = () => {
+  notification.value.show = false
+}
+
+const showNotification = (type, title, message, showActions = false, duration = 5000) => {
   notification.value = {
     show: true,
     type,
     title,
     message,
     showActions,
-    duration,
-    confirmCallback
+    duration
   }
 }
 
@@ -231,13 +233,6 @@ watch(() => props.show, (newValue) => {
 </script>
 
 <style scoped>
-.video-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
 video, img {
   width: 100%;
   height: 100%;

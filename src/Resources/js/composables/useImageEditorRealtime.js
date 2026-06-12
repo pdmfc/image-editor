@@ -44,6 +44,4 @@ export function useImageEditorRealtime(userIdRef, handlers = {}) {
   onUnmounted(() => {
     leave()
   })
-
-  return { resubscribe: subscribe, leave }
 }

@@ -6,12 +6,12 @@
   >
     <EditorTooltipLayer />
     <div class="flex min-h-0 flex-1">
-      <aside class="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-white sm:w-64">
+      <aside class="flex min-h-0 w-56 shrink-0 flex-col border-r border-gray-200 bg-white sm:w-64">
         <div class="flex flex-wrap justify-center gap-1.5 border-b border-gray-100 bg-gray-50/80 px-2 py-1.5">
           <label
             v-if="isActionEnabled('upload')"
             :for="fileInputId"
-            :title="uploading ? 'A carregar…' : 'Carregar'"
+            :title="uploadTitle"
             class="toolbar-icon-btn cursor-pointer"
             :class="{ 'pointer-events-none opacity-50': uploading }"
           >
@@ -23,6 +23,7 @@
             :id="fileInputId"
             type="file"
             accept="image/jpeg,image/png,image/gif,image/webp"
+            multiple
             class="hidden"
             :disabled="uploading"
             @change="handleFileUpload"
@@ -64,7 +65,7 @@
           <button
             v-if="isActionEnabled('canvas')"
             type="button"
-            title="Nova folha em branco"
+            :title="blankCanvasTitle"
             class="toolbar-icon-btn disabled:opacity-50"
             :disabled="creatingBlank"
             @click="createBlankCanvas"
@@ -80,14 +81,283 @@
           </button>
         </div>
 
-        <div class="border-b border-gray-100 px-3 py-2">
+        <div
+          v-if="galleryFoldersEnabled && folders.length > 0"
+          class="border-b border-gray-100 bg-white px-2 py-2"
+        >
+          <label class="block">
+            <span class="mb-1 block px-0.5 text-[10px] font-medium text-gray-500">
+              Pasta para novas imagens
+            </span>
+            <select
+              v-model="newPhotoFolderId"
+              class="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+              :disabled="uploading || creatingBlank"
+            >
+              <option v-for="folder in folders" :key="folder.id" :value="folder.id">
+                {{ folder.name }}
+              </option>
+            </select>
+          </label>
+        </div>
+
+        <template v-if="galleryFoldersEnabled">
+          <div class="flex min-h-0 flex-1 flex-col">
+            <div class="shrink-0 border-b border-gray-100 bg-gray-50/80 px-2 py-2.5">
+              <div class="mb-2 flex items-center justify-between gap-2 px-1">
+                <p class="text-xs font-medium text-gray-500">Pastas</p>
+                <button
+                  type="button"
+                  class="rounded-md p-1 text-gray-500 transition hover:bg-white hover:text-gray-700 disabled:opacity-40"
+                  :class="{
+                    'bg-white text-blue-600 ring-1 ring-blue-200':
+                      folderEditor.open && folderEditor.mode === 'create'
+                  }"
+                  :disabled="folderActionLoading"
+                  :title="folderEditor.open && folderEditor.mode === 'create' ? 'Cancelar' : 'Nova pasta'"
+                  @click="toggleFolderCreate"
+                >
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      v-if="folderEditor.open && folderEditor.mode === 'create'"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                    <path
+                      v-else
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              <div
+                v-if="folderEditor.open"
+                class="rounded-lg border-2 border-blue-200 bg-white p-2 shadow-sm"
+              >
+                <p class="mb-1.5 text-[10px] font-medium text-gray-500">
+                  {{ folderEditor.mode === 'create' ? 'Nova pasta' : 'Renomear pasta' }}
+                </p>
+                <input
+                  ref="folderNameInputRef"
+                  v-model="folderEditor.name"
+                  type="text"
+                  maxlength="80"
+                  autocomplete="off"
+                  class="w-full rounded-md border border-gray-200 px-2 py-1.5 text-xs text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  :placeholder="folderEditor.mode === 'create' ? 'Nome da pasta' : 'Novo nome'"
+                  :disabled="folderActionLoading"
+                  @keydown.enter.prevent="submitFolderEditor"
+                  @keydown.esc.prevent="closeFolderEditor"
+                />
+                <p v-if="folderEditor.error" class="mt-1 text-[10px] text-red-600">
+                  {{ folderEditor.error }}
+                </p>
+                <div class="mt-2 flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    class="rounded-md px-2 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+                    :disabled="folderActionLoading"
+                    @click="closeFolderEditor"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-md bg-blue-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="folderActionLoading || !folderEditor.name.trim()"
+                    @click="submitFolderEditor"
+                  >
+                    {{
+                      folderActionLoading
+                        ? 'A guardar…'
+                        : folderEditor.mode === 'create'
+                          ? 'Criar'
+                          : 'Guardar'
+                    }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="shrink-0 border-b border-gray-100 px-3 py-2">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-medium text-gray-500">
+                  Imagens
+                  <span v-if="!loading && photos.length">({{ photos.length }})</span>
+                </p>
+                <div v-if="!loading && photos.length > 0" class="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    class="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    :class="{ 'bg-violet-50 text-violet-600 ring-1 ring-violet-200': reorderMode }"
+                    :title="reorderMode ? 'Sair da ordenação' : 'Ordenar imagens dentro de cada pasta'"
+                    @click="toggleReorderMode"
+                  >
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 6h16M4 12h16M4 18h16"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    :class="{ 'bg-blue-50 text-blue-600 ring-1 ring-blue-200': bulkSelectMode }"
+                    :title="bulkSelectMode ? 'Sair da seleção' : 'Seleccionar imagens para eliminar'"
+                    @click="toggleBulkSelectMode"
+                  >
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div
+                v-if="reorderMode"
+                class="mt-2 space-y-1"
+              >
+                <p class="text-[10px] leading-snug text-violet-700">
+                  A ordenar em <span class="font-semibold">{{ reorderFolderName }}</span>.
+                  Arraste as imagens; com 2 ou mais selecionadas, o grupo move-se em conjunto.
+                  <span v-if="reorderSaving" class="text-violet-500"> A guardar…</span>
+                </p>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="text-[10px] font-medium text-violet-800">
+                    {{ reorderSelectionCount }} para mover
+                  </span>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-50"
+                    @click="selectAllReorder"
+                  >
+                    Todas
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-800 hover:bg-violet-50"
+                    :disabled="reorderSelectionCount === 0"
+                    @click="clearReorderSelection"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+              <div v-if="bulkSelectMode" class="mt-2 space-y-1.5">
+                <p class="text-[10px] leading-snug text-gray-600">
+                  A seleccionar em <span class="font-semibold">{{ bulkFolderName }}</span>.
+                  Toque nas imagens e clique Eliminar. Para mover, arraste para outra pasta.
+                </p>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="text-[10px] font-medium text-gray-600">
+                    {{ bulkSelectedCount }} selecionada{{ bulkSelectedCount === 1 ? '' : 's' }}
+                  </span>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+                    @click="selectAllBulk"
+                  >
+                    Todas
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+                    :disabled="bulkSelectedCount === 0"
+                    @click="clearBulkSelection"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="button"
+                    class="ml-auto rounded-md bg-red-600 px-2 py-0.5 text-[10px] font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="bulkSelectedCount === 0 || bulkDeleting"
+                    @click="handleConfirmBulkDelete"
+                  >
+                    {{ bulkDeleting ? 'A eliminar…' : 'Eliminar' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="loading" class="flex min-h-0 flex-1 justify-center py-8">
+              <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600"></div>
+            </div>
+            <p
+              v-else-if="photos.length === 0"
+              class="px-4 py-6 text-center text-sm text-gray-500"
+            >
+              Nenhuma imagem. Carregue um ficheiro ou tire uma foto.
+            </p>
+            <template v-else>
+            <GalleryFolderTree
+              :folders="folders"
+              :photos="photos"
+              :expanded-branches="expandedFolderBranches"
+              :selected-filename="selectedPhoto?.filename ?? null"
+              :folder-drop-target-id="folderDropTargetId"
+              :is-dragging-photo-to-folder="isDraggingPhotoToFolder"
+              :folder-drag-filename="folderDragFilename"
+              :bulk-select-mode="bulkSelectMode"
+              :bulk-folder-id="bulkFolderId"
+              :reorder-mode="reorderMode"
+              :reorder-folder-id="reorderFolderId"
+              :reorder-insert-at="reorderInsertAt"
+              :reorder-insert-folder-id="reorderInsertFolderId"
+              :is-in-reorder-drag-block="isInReorderDragBlock"
+              :as-modal="asModal"
+              :duplicating-filename="duplicatingFilename"
+              :is-bulk-selected="isBulkSelected"
+              :is-reorder-selected="isReorderSelected"
+              :can-drag-photo-to-folder="canDragPhotoToFolder"
+              :can-drag-photo-to-canvas="canDragPhotoToCanvas"
+              :folder-photo-count="folderPhotoCount"
+              :photo-folder-id="photoFolderId"
+              @reorder-pointer-down="onFolderReorderPointerDown"
+              @reorder-toggle="toggleReorderSelection"
+              @toggle-branch="toggleFolderBranch"
+              @expand-all="expandAllFolderBranches"
+              @collapse-all="collapseAllFolderBranches"
+              @select-folder="onTreeSelectFolder"
+              @folder-drag-over="onFolderDragOver"
+              @folder-drag-leave="onFolderDragLeave"
+              @folder-drop="onFolderDrop"
+              @rename-folder="openFolderEditor('rename', $event)"
+              @delete-folder="confirmDeleteGalleryFolder"
+              @thumbnail-click="onThumbnailClick"
+              @bulk-toggle="toggleBulkSelection"
+              @folder-photo-drag-start="(event, photo) => onGalleryThumbnailDragStart(-1, event, photo)"
+              @folder-photo-drag-end="onGalleryThumbnailDragEnd"
+              @use-in-form="usePhotoInForm"
+              @duplicate="handleDuplicate"
+              @delete-photo="handleConfirmDelete"
+            />
+            </template>
+          </div>
+        </template>
+
+        <template v-else>
+        <div class="shrink-0 border-b border-gray-100 px-3 py-2">
           <div class="flex items-center justify-between gap-2">
             <p class="text-xs font-medium text-gray-500">
               Imagens
-              <span v-if="!loading && photos.length">({{ photos.length }})</span>
+              <span v-if="!loading && displayPhotos.length">({{ displayPhotos.length }})</span>
             </p>
-            <div v-if="!loading && photos.length > 0" class="flex items-center gap-0.5">
+            <div v-if="!loading && displayPhotos.length > 0" class="flex items-center gap-0.5">
               <button
+                v-if="canReorderGallery"
                 type="button"
                 class="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                 :class="{ 'bg-violet-50 text-violet-600 ring-1 ring-violet-200': reorderMode }"
@@ -107,7 +377,7 @@
                 type="button"
                 class="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
                 :class="{ 'bg-blue-50 text-blue-600 ring-1 ring-blue-200': bulkSelectMode }"
-                :title="bulkSelectMode ? 'Sair da seleção' : 'Selecionar várias para eliminar'"
+                :title="bulkSelectMode ? 'Sair da seleção' : 'Seleccionar várias para eliminar'"
                 @click="toggleBulkSelectMode"
               >
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,8 +422,9 @@
           </div>
           <div
             v-if="bulkSelectMode"
-            class="mt-2 flex flex-wrap items-center gap-1.5"
+            class="mt-2 space-y-1.5"
           >
+            <div class="flex flex-wrap items-center gap-1.5">
             <span class="text-[10px] font-medium text-gray-600">
               {{ bulkSelectedCount }} selecionada{{ bulkSelectedCount === 1 ? '' : 's' }}
             </span>
@@ -180,6 +451,7 @@
             >
               {{ bulkDeleting ? 'A eliminar…' : 'Eliminar' }}
             </button>
+            </div>
           </div>
         </div>
 
@@ -187,7 +459,7 @@
           <div v-if="loading" class="flex justify-center py-8">
             <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600"></div>
           </div>
-          <p v-else-if="photos.length === 0" class="px-2 py-6 text-center text-sm text-gray-500">
+          <p v-else-if="displayPhotos.length === 0" class="px-2 py-6 text-center text-sm text-gray-500">
             Nenhuma imagem. Carregue um ficheiro ou tire uma foto.
           </p>
           <ul
@@ -195,7 +467,7 @@
             ref="galleryListRef"
             class="space-y-2"
           >
-            <template v-for="(photo, index) in photos" :key="photo.filename">
+            <template v-for="(photo, index) in displayPhotos" :key="photo.filename">
               <li
                 v-if="reorderMode && reorderInsertAt === index"
                 class="pointer-events-none mx-1 flex items-center gap-1 py-0.5"
@@ -211,7 +483,7 @@
               <div
                 role="button"
                 tabindex="0"
-                class="group relative w-full overflow-hidden rounded-lg border-2 text-left transition select-none"
+                class="group relative w-full rounded-lg border-2 text-left transition select-none"
                 :class="[
                   bulkSelectMode && isBulkSelected(photo.filename)
                     ? 'border-red-400 ring-2 ring-red-200'
@@ -287,7 +559,7 @@
                 </p>
                 <div
                   v-if="!bulkSelectMode && !reorderMode"
-                  class="pointer-events-none absolute inset-x-0 top-0 flex justify-end gap-1 p-1.5 opacity-0 transition-opacity group-hover:opacity-100"
+                  class="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-end gap-1 p-1.5 opacity-0 transition-opacity group-hover:opacity-100"
                 >
                   <button
                     v-if="asModal"
@@ -337,7 +609,7 @@
               </li>
             </template>
             <li
-              v-if="reorderMode && reorderInsertAt === photos.length"
+              v-if="reorderMode && reorderInsertAt === displayPhotos.length"
               class="pointer-events-none mx-1 flex items-center gap-1 py-0.5"
               aria-hidden="true"
             >
@@ -345,6 +617,7 @@
             </li>
           </ul>
         </div>
+        </template>
       </aside>
 
       <main
@@ -364,7 +637,9 @@
           :photo="selectedPhoto"
           :show-use-in-form="asModal"
           :gallery-index="selectedPhotoIndex"
-          :gallery-total="photos.length"
+          :gallery-total="displayPhotos.length"
+          :gallery-folders-enabled="galleryFoldersEnabled"
+          :gallery-folders="folders"
           @save="handleSaveEdit"
           @use-in-form="usePhotoInForm"
           @gallery-navigate="onGalleryNavigate"
@@ -445,7 +720,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, toRef } from 'vue'
+import { ref, computed, onMounted, toRef, nextTick } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Notification from '../Components/Notification.vue'
 import EditorTooltipLayer from '../Components/EditorTooltipLayer.vue'
@@ -455,8 +731,10 @@ import { editorTooltipRoot } from '../composables/editorTooltip.js'
 const vEditorTooltipRoot = editorTooltipRoot
 import QRCodePopup from '../Components/QRCodePopup.vue'
 import CameraPopup from '../Components/CameraPopup.vue'
+import GalleryFolderTree from '../Components/GalleryFolderTree.vue'
 import { useImageEditorRealtime } from '../composables/useImageEditorRealtime.js'
 import { useImageEditorActionButtons } from '../composables/useImageEditorActionButtons.js'
+import { useImageEditorGalleryFolders } from '../composables/useImageEditorGalleryFolders.js'
 
 const props = defineProps({
   asModal: {
@@ -474,6 +752,10 @@ const props = defineProps({
   actionButtons: {
     type: Array,
     default: null
+  },
+  galleryFoldersEnabled: {
+    type: Boolean,
+    default: null
   }
 })
 
@@ -481,7 +763,127 @@ const enabledActionButtons = useImageEditorActionButtons(
   toRef(props, 'actionButtons')
 )
 
+const inertiaPage = usePage()
+const galleryFoldersFromNova = useImageEditorGalleryFolders(
+  toRef(props, 'galleryFoldersEnabled')
+)
+
+const galleryFoldersEnabled = computed(() => {
+  if (typeof props.galleryFoldersEnabled === 'boolean') {
+    return props.galleryFoldersEnabled
+  }
+
+  const fromInertia = inertiaPage.props?.imageEditor?.galleryFoldersEnabled
+  if (typeof fromInertia === 'boolean') {
+    return fromInertia
+  }
+
+  return galleryFoldersFromNova.value
+})
+
 const isActionEnabled = (action) => enabledActionButtons.value.has(action)
+
+const photoFolderId = (photo) => photo?.folder_id || 'entrada'
+
+const expandedFolderBranches = ref(new Set())
+
+const photosInFolder = (folderId) =>
+  photos.value.filter((photo) => photoFolderId(photo) === folderId)
+
+const toggleFolderBranch = (folderId) => {
+  const next = new Set(expandedFolderBranches.value)
+  if (next.has(folderId)) {
+    next.delete(folderId)
+  } else {
+    next.add(folderId)
+  }
+  expandedFolderBranches.value = next
+}
+
+const openFolderBranch = (folderId) => {
+  if (expandedFolderBranches.value.has(folderId)) {
+    return
+  }
+
+  const next = new Set(expandedFolderBranches.value)
+  next.add(folderId)
+  expandedFolderBranches.value = next
+}
+
+const expandAllFolderBranches = () => {
+  expandedFolderBranches.value = new Set(folders.value.map((folder) => folder.id))
+}
+
+const collapseAllFolderBranches = () => {
+  expandedFolderBranches.value = new Set()
+}
+
+const syncExpandedFolderBranches = () => {
+  if (!galleryFoldersEnabled.value) {
+    return
+  }
+
+  const next = new Set(expandedFolderBranches.value)
+  for (const folder of folders.value) {
+    if (photosInFolder(folder.id).length > 0) {
+      next.add(folder.id)
+    }
+  }
+  expandedFolderBranches.value = next
+}
+
+/** Lista linear para navegação no editor (←/→), independente de pastas expandidas. */
+const displayPhotos = computed(() => {
+  if (!galleryFoldersEnabled.value) {
+    return photos.value
+  }
+
+  const result = []
+  for (const folder of folders.value) {
+    result.push(...photosInFolder(folder.id))
+  }
+  return result
+})
+
+const canReorderGallery = computed(() => !galleryFoldersEnabled.value)
+
+const reorderFolderId = ref(null)
+const reorderInsertFolderId = ref(null)
+const reorderDragFolderId = ref(null)
+
+const folderNameById = (folderId) =>
+  folders.value.find((item) => item.id === folderId)?.name ?? 'pasta'
+
+const reorderFolderName = computed(() => folderNameById(reorderFolderId.value))
+
+const bulkFolderId = ref(null)
+
+const bulkFolderName = computed(() => folderNameById(bulkFolderId.value))
+
+const resolveActiveFolderId = () => {
+  if (selectedPhoto.value) {
+    return photoFolderId(selectedPhoto.value)
+  }
+
+  const expanded = [...expandedFolderBranches.value]
+
+  if (expanded.length === 1) {
+    return expanded[0]
+  }
+
+  if (expanded.length > 1) {
+    for (const folder of folders.value) {
+      if (expandedFolderBranches.value.has(folder.id)) {
+        return folder.id
+      }
+    }
+  }
+
+  return folders.value[0]?.id ?? 'entrada'
+}
+
+const folderPhotoCount = (folderId) =>
+  photos.value.filter((photo) => photoFolderId(photo) === folderId).length
 
 const emit = defineEmits(['close', 'saved', 'useInForm'])
 
@@ -489,6 +891,19 @@ const fileInputId = computed(() => (props.asModal ? 'camera-file-modal' : 'camer
 
 const showCamera = ref(false)
 const photos = ref([])
+const folders = ref([])
+const folderActionLoading = ref(false)
+const folderEditor = ref({
+  open: false,
+  mode: 'create',
+  folderId: null,
+  name: '',
+  error: ''
+})
+const folderNameInputRef = ref(null)
+const folderDropTargetId = ref(null)
+const folderDragFilename = ref(null)
+const isDraggingPhotoToFolder = ref(false)
 const loading = ref(false)
 const selectedPhoto = ref(null)
 const notification = ref({
@@ -508,6 +923,26 @@ const showQRCode = ref(false)
 const qrCodeData = ref('')
 const duplicatingFilename = ref(null)
 const uploading = ref(false)
+const uploadProgress = ref({ current: 0, total: 0 })
+const uploadTitle = computed(() => {
+  if (!uploading.value) {
+    if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
+      return `Carregar imagens para ${folderNameById(newPhotoFolderId.value)}`
+    }
+    return 'Carregar imagens (pode escolher várias)'
+  }
+  if (uploadProgress.value.total > 1) {
+    return `A carregar ${uploadProgress.value.current}/${uploadProgress.value.total}…`
+  }
+  return 'A carregar…'
+})
+const newPhotoFolderId = ref('entrada')
+const blankCanvasTitle = computed(() => {
+  if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
+    return `Nova folha em branco em ${folderNameById(newPhotoFolderId.value)}`
+  }
+  return 'Nova folha em branco'
+})
 const creatingBlank = ref(false)
 const imageEditorRef = ref(null)
 const isDropTargetActive = ref(false)
@@ -532,6 +967,7 @@ const reorderDragPreview = ref({
 })
 
 const DRAG_PHOTO_MIME = 'application/x-image-editor-photo'
+const FOLDER_DROP_MIME = 'application/x-image-editor-folder-move'
 
 const requireUserId = () => {
   if (props.userId == null || props.userId === '') {
@@ -542,6 +978,21 @@ const requireUserId = () => {
 }
 
 const userParams = () => ({ user_id: props.userId })
+
+const newPhotoFolderParams = () =>
+  galleryFoldersEnabled.value && newPhotoFolderId.value
+    ? { folder_id: newPhotoFolderId.value }
+    : {}
+
+const ensureNewPhotoFolderId = () => {
+  if (!galleryFoldersEnabled.value || folders.value.length === 0) {
+    return
+  }
+
+  if (!folders.value.some((folder) => folder.id === newPhotoFolderId.value)) {
+    newPhotoFolderId.value = folders.value[0]?.id ?? 'entrada'
+  }
+}
 
 const isBlankCanvasSelected = computed(
   () => Boolean(selectedPhoto.value?.is_blank_canvas)
@@ -554,34 +1005,130 @@ const canDragPhotoToCanvas = (photo) => {
   return photo.filename !== selectedPhoto.value?.filename
 }
 
-const onThumbnailDragStart = (event, photo) => {
-  if (!canDragPhotoToCanvas(photo)) {
-    event.preventDefault()
-    return
-  }
-  event.dataTransfer.effectAllowed = 'copy'
-  event.dataTransfer.setData(
-    DRAG_PHOTO_MIME,
-    JSON.stringify({ url: photo.url, filename: photo.filename })
-  )
-}
-
 const onThumbnailDragEnd = () => {
   isDropTargetActive.value = false
 }
 
-const isThumbnailDraggable = (photo) =>
-  canDragPhotoToCanvas(photo) && !bulkSelectMode.value && !reorderMode.value
+const canDragPhotoToFolder = (photo) =>
+  galleryFoldersEnabled.value &&
+  Boolean(photo?.filename) &&
+  !bulkSelectMode.value &&
+  !reorderMode.value
 
-const onGalleryThumbnailDragStart = (index, event, photo) => {
+const isThumbnailDraggable = (photo) =>
+  (canDragPhotoToCanvas(photo) || canDragPhotoToFolder(photo)) &&
+  !bulkSelectMode.value &&
+  !reorderMode.value
+
+const folderDragGhostImage = (() => {
+  if (typeof Image === 'undefined') {
+    return null
+  }
+
+  const image = new Image()
+  image.src =
+    'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+  return image
+})()
+
+const onDocumentFolderDragOver = (event) => {
+  if (!isDraggingPhotoToFolder.value) {
+    return
+  }
+
+  reorderDragPreview.value = {
+    ...reorderDragPreview.value,
+    x: event.clientX,
+    y: event.clientY
+  }
+}
+
+const onFolderPhotoDragStart = (event, photo) => {
+  if (!canDragPhotoToFolder(photo)) {
+    event.preventDefault()
+    return
+  }
+
+  event.stopPropagation()
+  folderDragFilename.value = photo.filename
+  isDraggingPhotoToFolder.value = true
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', photo.filename)
+  event.dataTransfer.setData(FOLDER_DROP_MIME, photo.filename)
+
+  if (folderDragGhostImage) {
+    try {
+      event.dataTransfer.setDragImage(folderDragGhostImage, 0, 0)
+    } catch {
+      // Alguns browsers rejeitam setDragImage; o fantasma customizado compensa.
+    }
+  }
+
+  reorderDragPreview.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    imageUrl: photo.url ?? '',
+    count: 1
+  }
+  document.addEventListener('dragover', onDocumentFolderDragOver)
+}
+
+const suppressThumbnailClickAfterDrag = ref(false)
+
+const onFolderPhotoDragEnd = () => {
+  document.removeEventListener('dragover', onDocumentFolderDragOver)
+  hideReorderDragPreview()
+  folderDragFilename.value = null
+  isDraggingPhotoToFolder.value = false
+  folderDropTargetId.value = null
+  suppressThumbnailClickAfterDrag.value = true
+  setTimeout(() => {
+    suppressThumbnailClickAfterDrag.value = false
+  }, 0)
+}
+
+const onGalleryThumbnailDragStart = (_index, event, photo) => {
   if (reorderMode.value) {
     event.preventDefault()
     return
   }
-  onThumbnailDragStart(event, photo)
+
+  let allowed = false
+
+  if (canDragPhotoToFolder(photo)) {
+    onFolderPhotoDragStart(event, photo)
+    allowed = true
+  }
+
+  if (canDragPhotoToCanvas(photo)) {
+    event.dataTransfer.setData(
+      DRAG_PHOTO_MIME,
+      JSON.stringify({ url: photo.url, filename: photo.filename })
+    )
+    allowed = true
+  }
+
+  if (!allowed) {
+    event.preventDefault()
+    return
+  }
+
+  const forFolder = canDragPhotoToFolder(photo)
+  const forCanvas = canDragPhotoToCanvas(photo)
+
+  if (forFolder && forCanvas) {
+    event.dataTransfer.effectAllowed = 'copyMove'
+  } else if (forFolder) {
+    event.dataTransfer.effectAllowed = 'move'
+  } else {
+    event.dataTransfer.effectAllowed = 'copy'
+  }
 }
 
 const onGalleryThumbnailDragEnd = () => {
+  onFolderPhotoDragEnd()
   onThumbnailDragEnd()
 }
 
@@ -629,12 +1176,20 @@ const createBlankCanvas = async () => {
     const response = await axios.post('/api/camera/blank', {
       width: 1600,
       height: 1200,
-      ...userParams()
+      ...userParams(),
+      ...newPhotoFolderParams()
     })
     if (response.data?.success) {
       const fn = response.data.filename || response.data.photo?.filename
+      if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
+        openFolderBranch(newPhotoFolderId.value)
+      }
       await loadPhotos({ selectFilename: fn, autoSelectFirst: false })
-      showNotification('success', 'Sucesso', 'Folha em branco criada')
+      const folderLabel =
+        galleryFoldersEnabled.value && newPhotoFolderId.value
+          ? ` em ${folderNameById(newPhotoFolderId.value)}`
+          : ''
+      showNotification('success', 'Sucesso', `Folha em branco criada${folderLabel}`)
     } else {
       throw new Error(response.data?.error || 'Falha ao criar folha')
     }
@@ -747,6 +1302,11 @@ const applyPhotoSelection = (photo) => {
   }
   selectedPhoto.value = withCacheBustedUrl(photo)
   pendingPhotoSwitch.value = null
+  if (galleryFoldersEnabled.value) {
+    const folderId = photoFolderId(photo)
+    openFolderBranch(folderId)
+    newPhotoFolderId.value = folderId
+  }
   return true
 }
 
@@ -758,7 +1318,22 @@ const bulkSelectedCount = computed(() => bulkSelectedFilenames.value.length)
 
 const isBulkSelected = (filename) => bulkSelectedFilenames.value.includes(filename)
 
+const isPhotoInBulkFolder = (photo) =>
+  !galleryFoldersEnabled.value ||
+  !bulkFolderId.value ||
+  photoFolderId(photo) === bulkFolderId.value
+
+const isPhotoInReorderFolder = (photo) =>
+  !galleryFoldersEnabled.value ||
+  !reorderFolderId.value ||
+  photoFolderId(photo) === reorderFolderId.value
+
 const toggleBulkSelection = (filename) => {
+  const photo = photos.value.find((item) => item.filename === filename)
+  if (photo && !isPhotoInBulkFolder(photo)) {
+    return
+  }
+
   if (isBulkSelected(filename)) {
     bulkSelectedFilenames.value = bulkSelectedFilenames.value.filter((name) => name !== filename)
   } else {
@@ -770,9 +1345,14 @@ const toggleBulkSelectMode = () => {
   bulkSelectMode.value = !bulkSelectMode.value
   if (bulkSelectMode.value) {
     reorderMode.value = false
+    reorderFolderId.value = null
     resetReorderDragState()
-  }
-  if (!bulkSelectMode.value) {
+    if (galleryFoldersEnabled.value) {
+      bulkFolderId.value = resolveActiveFolderId()
+      openFolderBranch(bulkFolderId.value)
+    }
+  } else {
+    bulkFolderId.value = null
     bulkSelectedFilenames.value = []
   }
 }
@@ -781,8 +1361,14 @@ const toggleReorderMode = () => {
   reorderMode.value = !reorderMode.value
   if (reorderMode.value) {
     bulkSelectMode.value = false
+    bulkFolderId.value = null
     bulkSelectedFilenames.value = []
+    if (galleryFoldersEnabled.value) {
+      reorderFolderId.value = resolveActiveFolderId()
+      openFolderBranch(reorderFolderId.value)
+    }
   } else {
+    reorderFolderId.value = null
     reorderSelection.value = []
     resetReorderDragState()
   }
@@ -793,6 +1379,11 @@ const reorderSelectionCount = computed(() => reorderSelection.value.length)
 const isReorderSelected = (filename) => reorderSelection.value.includes(filename)
 
 const toggleReorderSelection = (filename) => {
+  const photo = photos.value.find((item) => item.filename === filename)
+  if (photo && !isPhotoInReorderFolder(photo)) {
+    return
+  }
+
   if (isReorderSelected(filename)) {
     reorderSelection.value = reorderSelection.value.filter((name) => name !== filename)
   } else {
@@ -801,6 +1392,11 @@ const toggleReorderSelection = (filename) => {
 }
 
 const selectAllReorder = () => {
+  if (galleryFoldersEnabled.value && reorderFolderId.value) {
+    reorderSelection.value = photosInFolder(reorderFolderId.value).map((photo) => photo.filename)
+    return
+  }
+
   reorderSelection.value = photos.value.map((photo) => photo.filename)
 }
 
@@ -808,13 +1404,13 @@ const clearReorderSelection = () => {
   reorderSelection.value = []
 }
 
-const getReorderDragFilenames = (dragIndex) => {
-  const dragged = photos.value[dragIndex]?.filename
+const getReorderDragFilenames = (dragIndex, list = displayPhotos.value) => {
+  const dragged = list[dragIndex]?.filename
   if (!dragged) {
     return []
   }
 
-  const selected = photos.value
+  const selected = list
     .filter((photo) => reorderSelection.value.includes(photo.filename))
     .map((photo) => photo.filename)
 
@@ -832,7 +1428,37 @@ const isInReorderDragBlock = (filename) => {
   if (reorderDragIndex.value === null) {
     return false
   }
-  return photos.value[reorderDragIndex.value]?.filename === filename
+
+  const list =
+    galleryFoldersEnabled.value && reorderDragFolderId.value
+      ? photosInFolder(reorderDragFolderId.value)
+      : displayPhotos.value
+
+  return list[reorderDragIndex.value]?.filename === filename
+}
+
+const rebuildPhotosWithFolderOrder = (folderId, folderPhotos) => {
+  const byFolder = new Map()
+
+  for (const photo of photos.value) {
+    const fid = photoFolderId(photo)
+    if (!byFolder.has(fid)) {
+      byFolder.set(fid, [])
+    }
+    byFolder.get(fid).push(photo)
+  }
+
+  byFolder.set(folderId, folderPhotos)
+
+  const result = []
+
+  for (const folder of folders.value) {
+    if (byFolder.has(folder.id)) {
+      result.push(...byFolder.get(folder.id))
+    }
+  }
+
+  photos.value = result
 }
 
 const getBlockInsertTarget = (list, blockFilenames, insertAt) => {
@@ -863,6 +1489,8 @@ const resetReorderDragState = () => {
   reorderDragIndex.value = null
   reorderDragFilenames.value = []
   reorderInsertAt.value = null
+  reorderInsertFolderId.value = null
+  reorderDragFolderId.value = null
   reorderPointerActive.value = false
   hideReorderDragPreview()
 }
@@ -884,22 +1512,29 @@ const resolveReorderInsertAt = (clientY, listEl) => {
   return items.length
 }
 
-const applyReorderMove = async (from, insertAt, dragFilenames) => {
+const applyReorderMove = async (from, insertAt, dragFilenames, folderId = null) => {
   if (!reorderMode.value || from === null || insertAt === null) {
     return false
   }
 
+  const list = folderId ? photosInFolder(folderId) : photos.value
+  const orderKey = (items) => items.map((photo) => photo.filename).join('\0')
+
   if (dragFilenames.length >= 2) {
-    const list = photos.value
-    const orderKey = (items) => items.map((photo) => photo.filename).join('\0')
     const reordered = movePhotosBlock(list, dragFilenames, insertAt)
 
     if (orderKey(reordered) === orderKey(list)) {
       return false
     }
 
-    photos.value = reordered
-    await persistGalleryOrder()
+    if (folderId) {
+      rebuildPhotosWithFolderOrder(folderId, reordered)
+      await persistGalleryOrder(folderId)
+    } else {
+      photos.value = reordered
+      await persistGalleryOrder()
+    }
+
     return true
   }
 
@@ -907,19 +1542,26 @@ const applyReorderMove = async (from, insertAt, dragFilenames) => {
     return false
   }
 
-  const updated = [...photos.value]
+  const updated = [...list]
   const [item] = updated.splice(from, 1)
   let target = insertAt
   if (from < insertAt) {
     target -= 1
   }
   updated.splice(target, 0, item)
-  photos.value = updated
-  await persistGalleryOrder()
+
+  if (folderId) {
+    rebuildPhotosWithFolderOrder(folderId, updated)
+    await persistGalleryOrder(folderId)
+  } else {
+    photos.value = updated
+    await persistGalleryOrder()
+  }
+
   return true
 }
 
-const onReorderPointerDown = (index, event) => {
+const startReorderPointerDrag = ({ folderId, index, event, list, listEl }) => {
   if (!reorderMode.value) {
     return
   }
@@ -929,23 +1571,23 @@ const onReorderPointerDown = (index, event) => {
   if (event.target.closest('label, input, button')) {
     return
   }
-
-  const listEl = galleryListRef.value
   if (!listEl) {
     return
   }
 
-  const dragFilenames = getReorderDragFilenames(index)
+  const dragFilenames = getReorderDragFilenames(index, list)
   const startX = event.clientX
   const startY = event.clientY
   let moved = false
   const primaryPhoto =
-    photos.value.find((photo) => photo.filename === dragFilenames[0]) ?? photos.value[index]
+    list.find((photo) => photo.filename === dragFilenames[0]) ?? list[index]
 
   reorderPointerActive.value = true
   reorderDragIndex.value = index
   reorderDragFilenames.value = dragFilenames
   reorderInsertAt.value = index
+  reorderInsertFolderId.value = folderId
+  reorderDragFolderId.value = folderId
   reorderDragPreview.value = {
     visible: false,
     x: startX,
@@ -971,6 +1613,9 @@ const onReorderPointerDown = (index, event) => {
       y: moveEvent.clientY
     }
     reorderInsertAt.value = resolveReorderInsertAt(moveEvent.clientY, listEl)
+    if (folderId) {
+      reorderInsertFolderId.value = folderId
+    }
   }
 
   const onUp = async (upEvent) => {
@@ -994,7 +1639,7 @@ const onReorderPointerDown = (index, event) => {
       window.setTimeout(() => {
         reorderSuppressClick.value = false
       }, 0)
-      await applyReorderMove(from, insertAt, filenames)
+      await applyReorderMove(from, insertAt, filenames, folderId)
     }
   }
 
@@ -1004,7 +1649,31 @@ const onReorderPointerDown = (index, event) => {
   event.preventDefault()
 }
 
-const persistGalleryOrder = async () => {
+const onReorderPointerDown = (index, event) => {
+  startReorderPointerDrag({
+    folderId: null,
+    index,
+    event,
+    list: displayPhotos.value,
+    listEl: galleryListRef.value
+  })
+}
+
+const onFolderReorderPointerDown = (folderId, index, event) => {
+  if (folderId !== reorderFolderId.value) {
+    return
+  }
+
+  startReorderPointerDrag({
+    folderId,
+    index,
+    event,
+    list: photosInFolder(folderId),
+    listEl: event.target.closest('[data-reorder-folder]')
+  })
+}
+
+const persistGalleryOrder = async (folderId = null) => {
   if (!requireUserId()) {
     return
   }
@@ -1012,11 +1681,24 @@ const persistGalleryOrder = async () => {
   const selectedFilename = selectedPhoto.value?.filename
   reorderSaving.value = true
 
+  const payload = {
+    ...userParams(),
+    filenames:
+      galleryFoldersEnabled.value && folderId
+        ? photosInFolder(folderId).map((photo) => photo.filename)
+        : photos.value.map((photo) => photo.filename)
+  }
+
+  if (galleryFoldersEnabled.value && folderId) {
+    payload.folder_id = folderId
+  }
+
   try {
-    await axios.post('/api/camera/photos/reorder', {
-      filenames: photos.value.map((photo) => photo.filename),
-      ...userParams()
-    })
+    const { data } = await axios.post('/api/camera/photos/reorder', payload)
+    if (data?.photos) {
+      photos.value = data.photos
+    }
+    applyFoldersFromResponse(data)
   } catch (error) {
     console.error('Erro ao guardar ordem das fotos:', error)
     await loadPhotos({ autoSelectFirst: false })
@@ -1027,8 +1709,313 @@ const persistGalleryOrder = async () => {
   }
 }
 
+const onTreeSelectFolder = (folderId) => {
+  openFolderBranch(folderId)
+
+  if (!galleryFoldersEnabled.value) {
+    return
+  }
+
+  newPhotoFolderId.value = folderId
+
+  if (reorderMode.value) {
+    reorderFolderId.value = folderId
+    reorderSelection.value = []
+    resetReorderDragState()
+  }
+
+  if (bulkSelectMode.value) {
+    bulkFolderId.value = folderId
+    bulkSelectedFilenames.value = []
+  }
+}
+
+const applyFoldersFromResponse = (data) => {
+  if (!galleryFoldersEnabled.value) {
+    folders.value = []
+    return
+  }
+
+  folders.value = Array.isArray(data?.folders) ? data.folders : []
+  ensureNewPhotoFolderId()
+  syncExpandedFolderBranches()
+}
+
+const focusFolderEditorInput = () => {
+  nextTick(() => {
+    folderNameInputRef.value?.focus()
+    folderNameInputRef.value?.select()
+  })
+}
+
+const openFolderEditor = (mode, folder = null) => {
+  folderEditor.value = {
+    open: true,
+    mode,
+    folderId: folder?.id ?? null,
+    name: folder?.name ?? '',
+    error: ''
+  }
+  focusFolderEditorInput()
+}
+
+const toggleFolderCreate = () => {
+  if (folderEditor.value.open && folderEditor.value.mode === 'create') {
+    closeFolderEditor()
+    return
+  }
+  openFolderEditor('create')
+}
+
+const closeFolderEditor = () => {
+  folderEditor.value.open = false
+  folderEditor.value.error = ''
+  folderEditor.value.name = ''
+  folderEditor.value.folderId = null
+}
+
+const submitFolderEditor = async () => {
+  const name = folderEditor.value.name.trim()
+  if (!name) {
+    folderEditor.value.error = 'Indique um nome para a pasta.'
+    return
+  }
+
+  if (folderEditor.value.mode === 'rename') {
+    const current = folders.value.find((item) => item.id === folderEditor.value.folderId)
+    if (current && current.name === name) {
+      closeFolderEditor()
+      return
+    }
+    await renameGalleryFolder(folderEditor.value.folderId, name)
+    return
+  }
+
+  await createGalleryFolder(name)
+}
+
+const createGalleryFolder = async (name) => {
+  if (!galleryFoldersEnabled.value || !requireUserId() || folderActionLoading.value) {
+    return
+  }
+
+  folderActionLoading.value = true
+  folderEditor.value.error = ''
+  try {
+    const response = await axios.post('/api/camera/folders', {
+      name,
+      ...userParams()
+    })
+    if (response.data?.error) {
+      throw new Error(response.data.error)
+    }
+    folders.value = response.data.folders ?? folders.value
+    if (response.data.folder?.id) {
+      const next = new Set(expandedFolderBranches.value)
+      next.add(response.data.folder.id)
+      expandedFolderBranches.value = next
+    }
+    closeFolderEditor()
+    showNotification('success', 'Pasta criada', `A pasta «${name}» foi criada.`)
+  } catch (error) {
+    console.error(error)
+    folderEditor.value.error =
+      error.response?.data?.error || error.message || 'Não foi possível criar a pasta.'
+  } finally {
+    folderActionLoading.value = false
+  }
+}
+
+const renameGalleryFolder = async (folderId, name) => {
+  if (!folderId || folderActionLoading.value || !requireUserId()) {
+    return
+  }
+
+  folderActionLoading.value = true
+  folderEditor.value.error = ''
+  try {
+    const response = await axios.patch(`/api/camera/folders/${encodeURIComponent(folderId)}`, {
+      name,
+      ...userParams()
+    })
+    if (response.data?.error) {
+      throw new Error(response.data.error)
+    }
+    folders.value = response.data.folders ?? folders.value
+    closeFolderEditor()
+    showNotification('success', 'Pasta renomeada', `A pasta passou a chamar-se «${name}».`)
+  } catch (error) {
+    console.error(error)
+    folderEditor.value.error =
+      error.response?.data?.error || error.message || 'Não foi possível renomear a pasta.'
+  } finally {
+    folderActionLoading.value = false
+  }
+}
+
+const confirmDeleteGalleryFolder = (folder) => {
+  if (!folder || folder.system) {
+    return
+  }
+
+  showNotification(
+    'warning',
+    'Eliminar pasta',
+    `As imagens de «${folder.name}» passam para Entrada. Continuar?`,
+    true,
+    folder,
+    0,
+    'delete-folder'
+  )
+}
+
+const deleteGalleryFolder = async (folder) => {
+  if (!folder || !requireUserId() || folderActionLoading.value) {
+    return
+  }
+
+  folderActionLoading.value = true
+  try {
+    const response = await axios.delete(
+      `/api/camera/folders/${encodeURIComponent(folder.id)}`,
+      { data: userParams() }
+    )
+    if (response.data?.error) {
+      throw new Error(response.data.error)
+    }
+    folders.value = response.data.folders ?? folders.value
+    if (expandedFolderBranches.value.has(folder.id)) {
+      const next = new Set(expandedFolderBranches.value)
+      next.delete(folder.id)
+      expandedFolderBranches.value = next
+    }
+    await loadPhotos({ silent: true, autoSelectFirst: false })
+    showNotification('success', 'Pasta eliminada', `A pasta «${folder.name}» foi eliminada.`)
+  } catch (error) {
+    console.error(error)
+    showNotification(
+      'error',
+      'Erro',
+      error.response?.data?.error || error.message || 'Não foi possível eliminar a pasta'
+    )
+  } finally {
+    folderActionLoading.value = false
+  }
+}
+
+const movePhotosToFolder = async (filenames, folderId, options = {}) => {
+  if (!galleryFoldersEnabled.value || !folderId || !requireUserId()) {
+    return false
+  }
+
+  const names = [...new Set(filenames.filter(Boolean))]
+  if (names.length === 0) {
+    return false
+  }
+
+  folderActionLoading.value = true
+  try {
+    const response = await axios.post('/api/camera/photos/move', {
+      filenames: names,
+      folder_id: folderId,
+      ...userParams()
+    })
+    if (response.data?.error) {
+      throw new Error(response.data.error)
+    }
+    photos.value = normalizePhotosList(response.data.photos)
+    applyFoldersFromResponse(response.data)
+
+    if (names.length === 1) {
+      syncSelectedPhotoFromList(names[0])
+    }
+
+    if (options.clearBulk) {
+      bulkSelectedFilenames.value = []
+      bulkSelectMode.value = false
+      bulkFolderId.value = null
+    }
+
+    if (options.expandFolder) {
+      const next = new Set(expandedFolderBranches.value)
+      next.add(folderId)
+      expandedFolderBranches.value = next
+    }
+
+    const message =
+      names.length === 1
+        ? 'A imagem foi movida para a pasta.'
+        : `${names.length} imagens foram movidas para a pasta.`
+    showNotification('success', 'Imagens movidas', message)
+    return true
+  } catch (error) {
+    console.error(error)
+    showNotification(
+      'error',
+      'Erro',
+      error.response?.data?.error || error.message || 'Não foi possível mover as imagens'
+    )
+    return false
+  } finally {
+    folderActionLoading.value = false
+  }
+}
+
+const onFolderDragOver = (folderId, event) => {
+  if (reorderMode.value || !galleryFoldersEnabled.value || !isDraggingPhotoToFolder.value) {
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+  folderDropTargetId.value = folderId
+}
+
+const onFolderDragLeave = (folderId, event) => {
+  const related = event.relatedTarget
+  if (related && event.currentTarget?.contains(related)) {
+    return
+  }
+  if (folderDropTargetId.value === folderId) {
+    folderDropTargetId.value = null
+  }
+}
+
+const onFolderDrop = async (folderId, event) => {
+  if (reorderMode.value) {
+    return
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const filename =
+    event.dataTransfer?.getData(FOLDER_DROP_MIME) ||
+    event.dataTransfer?.getData('text/plain') ||
+    folderDragFilename.value
+  folderDropTargetId.value = null
+  folderDragFilename.value = null
+  isDraggingPhotoToFolder.value = false
+  hideReorderDragPreview()
+
+  if (!filename) {
+    return
+  }
+  await movePhotosToFolder([filename], folderId, { expandFolder: true })
+}
+
 const selectAllBulk = () => {
-  bulkSelectedFilenames.value = photos.value.map((photo) => photo.filename)
+  if (galleryFoldersEnabled.value) {
+    if (!bulkFolderId.value) {
+      return
+    }
+    bulkSelectedFilenames.value = photosInFolder(bulkFolderId.value).map((photo) => photo.filename)
+    return
+  }
+
+  bulkSelectedFilenames.value = displayPhotos.value.map((photo) => photo.filename)
 }
 
 const clearBulkSelection = () => {
@@ -1036,11 +2023,13 @@ const clearBulkSelection = () => {
 }
 
 const onThumbnailClick = (photo) => {
-  if (reorderSuppressClick.value) {
+  if (suppressThumbnailClickAfterDrag.value || reorderSuppressClick.value) {
     return
   }
   if (bulkSelectMode.value) {
-    toggleBulkSelection(photo.filename)
+    if (isPhotoInBulkFolder(photo)) {
+      toggleBulkSelection(photo.filename)
+    }
     return
   }
   selectPhoto(photo)
@@ -1051,7 +2040,7 @@ const selectedPhotoIndex = computed(() => {
   if (!filename) {
     return -1
   }
-  return photos.value.findIndex((photo) => photo.filename === filename)
+  return displayPhotos.value.findIndex((photo) => photo.filename === filename)
 })
 
 const onGalleryNavigate = (direction) => {
@@ -1060,10 +2049,10 @@ const onGalleryNavigate = (direction) => {
     return
   }
   const nextIndex = direction === 'next' ? index + 1 : index - 1
-  if (nextIndex < 0 || nextIndex >= photos.value.length) {
+  if (nextIndex < 0 || nextIndex >= displayPhotos.value.length) {
     return
   }
-  selectPhoto(photos.value[nextIndex])
+  selectPhoto(displayPhotos.value[nextIndex])
 }
 
 const showNotification = (
@@ -1086,7 +2075,10 @@ const showNotification = (
       title,
       message,
       showActions,
-      photoToDelete: action === 'delete' || action === 'delete-bulk' ? photoToDelete : null,
+      photoToDelete:
+        action === 'delete' || action === 'delete-bulk' || action === 'delete-folder'
+          ? photoToDelete
+          : null,
       action,
       confirmLabel,
       cancelLabel,
@@ -1110,6 +2102,9 @@ const onNotificationConfirm = () => {
   }
   if (action === 'delete-bulk') {
     confirmBulkDelete(notification.value.photoToDelete)
+  }
+  if (action === 'delete-folder') {
+    deleteGalleryFolder(notification.value.photoToDelete)
   }
 }
 
@@ -1136,6 +2131,7 @@ const loadPhotos = async (options = {}) => {
     }
 
     photos.value = normalizePhotosList(response.data.photos)
+    applyFoldersFromResponse(response.data)
 
     if (options.selectFilename) {
       const found = photos.value.find((p) => p.filename === options.selectFilename)
@@ -1172,6 +2168,7 @@ const handlePhotosUploadedFromMobile = async (payload) => {
 
   if (Array.isArray(payload?.photos) && payload.photos.length > 0) {
     photos.value = normalizePhotosList(payload.photos)
+    applyFoldersFromResponse(payload)
   } else {
     await loadPhotos({ silent: true, autoSelectFirst: false })
   }
@@ -1203,32 +2200,75 @@ useImageEditorRealtime(toRef(props, 'userId'), {
 })
 
 const handleFileUpload = async (event) => {
-  const file = event.target.files?.[0]
+  const files = Array.from(event.target.files ?? []).filter((file) =>
+    String(file.type || '').startsWith('image/')
+  )
   event.target.value = ''
-  if (!file || !requireUserId()) {
+  if (files.length === 0 || !requireUserId()) {
     return
   }
   uploading.value = true
+  uploadProgress.value = { current: 0, total: files.length }
+  let lastFilename = null
+  let uploaded = 0
+  let failed = 0
   try {
-    const formData = new FormData()
-    formData.append('photo', file)
-    formData.append('user_id', String(props.userId))
-    const response = await axios.post('/api/camera/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    if (response.data?.success) {
-      const fn = response.data.filename || response.data.photo?.filename
-      await loadPhotos({ selectFilename: fn, autoSelectFirst: false })
-      showNotification('success', 'Sucesso', 'Imagem carregada com sucesso')
+    for (let i = 0; i < files.length; i++) {
+      uploadProgress.value = { current: i + 1, total: files.length }
+      const formData = new FormData()
+      formData.append('photo', files[i])
+      formData.append('user_id', String(props.userId))
+      if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
+        formData.append('folder_id', newPhotoFolderId.value)
+      }
+      try {
+        const response = await axios.post('/api/camera/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        if (response.data?.success) {
+          lastFilename = response.data.filename || response.data.photo?.filename
+          uploaded++
+        } else {
+          failed++
+        }
+      } catch (error) {
+        console.error('Erro ao carregar imagem:', error)
+        failed++
+      }
+    }
+    if (uploaded === 0) {
+      throw new Error('Nenhuma imagem foi carregada')
+    }
+    if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
+      openFolderBranch(newPhotoFolderId.value)
+    }
+    await loadPhotos({ selectFilename: lastFilename, autoSelectFirst: false })
+    const folderLabel =
+      galleryFoldersEnabled.value && newPhotoFolderId.value
+        ? ` em ${folderNameById(newPhotoFolderId.value)}`
+        : ''
+    if (failed === 0) {
+      showNotification(
+        'success',
+        'Sucesso',
+        uploaded === 1
+          ? `Imagem carregada com sucesso${folderLabel}`
+          : `${uploaded} imagens carregadas com sucesso${folderLabel}`
+      )
     } else {
-      throw new Error(response.data?.error || 'Falha no upload')
+      showNotification(
+        'warning',
+        'Carregamento parcial',
+        `${uploaded} imagem(ns) carregada(s), ${failed} falharam.`
+      )
     }
   } catch (error) {
-    console.error('Erro ao carregar imagem:', error)
-    const msg = error.response?.data?.error || error.message || 'Erro ao carregar a imagem'
+    console.error('Erro ao carregar imagens:', error)
+    const msg = error.response?.data?.error || error.message || 'Erro ao carregar as imagens'
     showNotification('error', 'Erro', msg)
   } finally {
     uploading.value = false
+    uploadProgress.value = { current: 0, total: 0 }
   }
 }
 
@@ -1329,6 +2369,7 @@ const confirmBulkDelete = async (filenames) => {
 
     bulkSelectedFilenames.value = []
     bulkSelectMode.value = false
+    bulkFolderId.value = null
 
     await loadPhotos({ autoSelectFirst: deletingSelected })
 
@@ -1360,6 +2401,7 @@ const confirmBulkDelete = async (filenames) => {
     if (partial > 0) {
       bulkSelectedFilenames.value = []
       bulkSelectMode.value = false
+      bulkFolderId.value = null
       await loadPhotos({ autoSelectFirst: true })
       showNotification(
         'warning',
@@ -1482,11 +2524,20 @@ const handleSaveEdit = async (payload) => {
       payload &&
       typeof payload === 'object' &&
       payload.saveMode === 'copy'
+    if (isCopy && payload?.saveCopyFolderId && galleryFoldersEnabled.value) {
+      openFolderBranch(payload.saveCopyFolderId)
+    }
+    const copyFolderLabel =
+      isCopy && payload?.saveCopyFolderId
+        ? folderNameById(payload.saveCopyFolderId)
+        : null
     showNotification(
       'success',
       'Sucesso',
       isCopy
-        ? 'Nova imagem criada; o ficheiro original mantém-se.'
+        ? copyFolderLabel
+          ? `Nova imagem criada na pasta «${copyFolderLabel}»; o original mantém-se.`
+          : 'Nova imagem criada; o ficheiro original mantém-se.'
         : 'Foto atualizada com sucesso!'
     )
   } catch (error) {
@@ -1533,4 +2584,33 @@ onMounted(() => {
   background-size: 12px 12px;
   background-position: 0 0, 0 6px, 6px -6px, -6px 0;
 }
+
+.gallery-folder-btn {
+  @apply flex w-full items-center gap-2 rounded-lg border-2 border-gray-200 bg-white px-2 py-2 text-xs text-gray-700 transition hover:border-gray-300;
+}
+
+.gallery-folder-btn--active {
+  @apply border-blue-500 bg-blue-50 font-medium text-blue-900 ring-2 ring-blue-200;
+}
+
+.gallery-folder-icon {
+  @apply h-4 w-4 shrink-0 text-gray-400;
+}
+
+.gallery-folder-btn--active .gallery-folder-icon {
+  @apply text-blue-600;
+}
+
+.gallery-folder-count {
+  @apply shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500;
+}
+
+.gallery-folder-btn--active .gallery-folder-count {
+  @apply bg-blue-100 text-blue-700;
+}
+
+.gallery-folder-btn--drop-target {
+  @apply border-blue-400 bg-blue-100 ring-2 ring-blue-300;
+}
+
 </style>

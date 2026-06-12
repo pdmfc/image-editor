@@ -30,12 +30,16 @@ return [
         'callback_url' => env('QRCODE_CALLBACK_URL'),
     ],
 
-    'text_font' => env('IMAGE_EDITOR_TEXT_FONT', env('CAMERA_TEXT_FONT')),
-    'text_font_bold' => env('IMAGE_EDITOR_TEXT_FONT_BOLD', env('CAMERA_TEXT_FONT_BOLD')),
-
     'broadcasting' => [
         'enabled' => env('IMAGE_EDITOR_BROADCASTING', true),
         'session_user_id_key' => 'image_editor_broadcast_user_id',
         'authorize' => null,
+    ],
+
+    'gallery' => [
+        'folders_enabled' => filter_var(
+            env('IMAGE_EDITOR_GALLERY_FOLDERS', false),
+            FILTER_VALIDATE_BOOL
+        ),
     ],
 ];

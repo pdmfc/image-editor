@@ -66,6 +66,11 @@ class ImageController extends Controller
             'drawings.*.points' => 'nullable|array|max:8000',
             'drawings.*.points.*.x' => 'required_with:drawings.*.points|integer|min:0|max:20000',
             'drawings.*.points.*.y' => 'required_with:drawings.*.points|integer|min:0|max:20000',
+            'layout_drawings' => 'nullable|array|max:500',
+            'layout_drawings.*.type' => 'required|string|in:line,arrow,rectangle,ellipse,circle,polygon,pen,bezier,pixel,fill',
+            'layout_drawings.*.points' => 'nullable|array|max:8000',
+            'layout_drawings.*.points.*.x' => 'required_with:layout_drawings.*.points|integer|min:0|max:20000',
+            'layout_drawings.*.points.*.y' => 'required_with:layout_drawings.*.points|integer|min:0|max:20000',
             'image_overlays' => 'nullable|array|max:20',
             'image_overlays.*.src' => 'required|string|max:6500000',
             'image_overlays.*.x' => 'required|integer|min:0',
@@ -114,6 +119,7 @@ class ImageController extends Controller
 
         if ($forSave) {
             $rules['save_mode'] = 'nullable|string|in:overwrite,copy';
+            $rules['save_copy_folder_id'] = 'nullable|string|max:64';
             $rules['output_format'] = 'nullable|string|in:jpeg,png';
             $rules['output_quality'] = 'nullable|integer|min:1|max:100';
         }

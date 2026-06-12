@@ -10,11 +10,13 @@ use Intervention\Image\Encoders\PngEncoder;
 use Intervention\Image\Interfaces\ImageInterface;
 use Intervention\Image\Laravel\Facades\Image;
 use Intervention\Image\Typography\FontFactory;
+use PDMFC\ImageEditor\Support\GalleryFolders;
 
 class ImageService
 {
     public function __construct(
         protected UserPhotoStorage $storage,
+        protected GalleryFolders $galleryFolders,
     ) {
     }
 
@@ -130,6 +132,7 @@ class ImageService
             $this->applyWatermark($image, $data);
             $image = $this->applyPhotoCaptionBand($image, $data);
             $image = $this->composeZoomLayoutIfPresent($image, $data);
+            $this->applyLayoutDrawings($image, $data);
 
             if ($save) {
 
@@ -166,11 +169,31 @@ class ImageService
 
                 $image->encode($encoder)->save($writePath);
 
+                if ($saveMode === 'copy' && $this->galleryFolders->enabled()) {
+                    $folderId = $data->input('save_copy_folder_id');
+                    if (is_string($folderId) && $folderId !== '') {
+                        $this->galleryFolders->assignNewPhoto($userId, $targetFilename, $folderId);
+                    } else {
+                        $this->galleryFolders->assignDuplicateFromSource(
+                            $userId,
+                            $sourceFilename,
+                            $targetFilename
+                        );
+                    }
+
+                    if ($this->storage->readGalleryOrder($userId) !== []) {
+                        $this->storage->appendToGalleryOrder($userId, $targetFilename);
+                    }
+                }
+
                 return [
                     'success' => true,
                     'image_url' => $targetFilename,
                     'url' => $this->storage->photoUrl($userId, $targetFilename),
                     'save_mode' => $saveMode,
+                    'save_copy_folder_id' => $saveMode === 'copy'
+                        ? (is_string($data->input('save_copy_folder_id')) ? $data->input('save_copy_folder_id') : null)
+                        : null,
                 ];
             }
 
@@ -651,6 +674,19 @@ class ImageService
     }
 
     /**
+     * Desenhos sobre a composição de zoom (após o canvas branco + detalhes).
+     */
+    private function applyLayoutDrawings(ImageInterface $image, Request $data): void
+    {
+        $layout = $data->input('zoom_layout');
+        if (! is_array($layout) || empty($layout['callouts'])) {
+            return;
+        }
+
+        (new DrawingApplicator())->apply($image, $data->input('layout_drawings'));
+    }
+
+    /**
      * Marca de água (texto ou imagem) num canto da foto.
      */
     private function applyWatermark(ImageInterface $image, Request $data): void
@@ -820,6 +856,73 @@ class ImageService
             'width' => (int) ceil($maxW),
             'height' => (int) ceil(count($lines) * $lineHeight),
         ];
+    }
+
+    /**
+     * Dimensões do bloco de texto como o driver GD do Intervention (align + valign top).
+     *
+     * @return array{width: int, height: int}
+     */
+    private function measureTextBlockBox(string $content, array $text, ImageInterface $image): array
+    {
+        $fontPath = $this->resolveTextFontPath($text);
+        $naturalPx = max(6.0, min(900.0, (float) ($text['size'] ?? 24)));
+
+        if ($fontPath === null) {
+            return $this->estimateTextBox($content, $naturalPx);
+        }
+
+        $nativeSize = $this->nativeFontSizeForRendering($image, $naturalPx);
+        $lines = preg_split('/\r\n|\r|\n/', $content) ?: [''];
+        $lineCount = max(1, count($lines));
+
+        $blockWidth = 0;
+        foreach ($lines as $line) {
+            $blockWidth = max($blockWidth, $this->ttfTextWidth($fontPath, $nativeSize, $line));
+        }
+
+        $capHeight = $this->ttfTextHeight($fontPath, $nativeSize, 'T');
+        $typographicalSize = $this->ttfTextHeight($fontPath, $nativeSize, 'Hy');
+        $leading = (int) round($typographicalSize * 1.25 * 0.8);
+        $blockHeight = $leading * ($lineCount - 1) + $capHeight;
+
+        return [
+            'width' => max(1, $blockWidth),
+            'height' => max(1, $blockHeight),
+        ];
+    }
+
+    private function nativeFontSizeForRendering(ImageInterface $image, float $naturalPx): float
+    {
+        $fontSize = $this->fontSizeForTextRendering($image, $naturalPx);
+
+        if ($image->driver()->id() === 'GD') {
+            return floatval(round($fontSize * 0.76, 6));
+        }
+
+        return $fontSize;
+    }
+
+    private function ttfTextWidth(string $fontPath, float $nativeSize, string $line): int
+    {
+        $box = imageftbbox($nativeSize, 0, $fontPath, $line !== '' ? $line : ' ');
+
+        if ($box === false) {
+            return 0;
+        }
+
+        return (int) abs($box[6] - $box[4]);
+    }
+
+    private function ttfTextHeight(string $fontPath, float $nativeSize, string $sample): int
+    {
+        $box = imageftbbox($nativeSize, 0, $fontPath, $sample);
+
+        if ($box === false) {
+            return 0;
+        }
+
+        return (int) abs($box[7] - $box[1]);
     }
 
     private function colorWithOpacity(string $color, int $opacityPercent): string
@@ -1077,8 +1180,7 @@ class ImageService
         int $y,
         string $bgColor
     ): void {
-        $renderSize = $this->fontSizeForTextRendering($image, (float) ($text['size'] ?? 24));
-        $box = $this->estimateTextBox($content, $renderSize);
+        $box = $this->measureTextBlockBox($content, $text, $image);
         $padding = max(0, min(48, (int) ($text['background_padding'] ?? 6)));
         $opacity = max(5, min(100, (int) ($text['background_opacity'] ?? 75)));
 
@@ -1140,36 +1242,16 @@ class ImageService
      */
     private function resolveTextFontPath(array $text): ?string
     {
-        $bold = ! empty($text['bold']);
+        return $this->packagedTextFontPath(! empty($text['bold']));
+    }
 
-        $configured = $bold
-            ? config('image-editor.text_font_bold')
-            : config('image-editor.text_font');
+    private function packagedTextFontPath(bool $bold): ?string
+    {
+        $filename = $bold ? 'DejaVuSans-Bold.ttf' : 'DejaVuSans.ttf';
+        $path = dirname(__DIR__).'/Resources/fonts/'.$filename;
 
-        if (is_string($configured) && $configured !== '' && is_file($configured) && is_readable($configured)) {
-            return $configured;
-        }
-
-        $candidates = $bold
-            ? [
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-                '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
-                '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
-                '/Library/Fonts/Arial Bold.ttf',
-                '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
-            ]
-            : [
-                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-                '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-                '/usr/share/fonts/TTF/DejaVuSans.ttf',
-                '/Library/Fonts/Arial.ttf',
-                '/System/Library/Fonts/Supplemental/Arial.ttf',
-            ];
-
-        foreach ($candidates as $candidate) {
-            if (is_file($candidate) && is_readable($candidate)) {
-                return $candidate;
-            }
+        if (is_file($path) && is_readable($path)) {
+            return $path;
         }
 
         return null;

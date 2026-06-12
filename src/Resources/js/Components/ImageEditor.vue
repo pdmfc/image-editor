@@ -110,6 +110,17 @@
           <input v-model="saveMode" type="radio" value="copy" class="mt-0.5 shrink-0" />
           <span>Manter o original e criar uma nova imagem</span>
         </label>
+        <label v-if="showSaveCopyFolderPicker" class="mt-2 block">
+          <span class="mb-1 block text-white/80">Pasta da nova imagem</span>
+          <select
+            v-model="saveCopyFolderId"
+            class="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1.5 text-white focus:border-white/40 focus:outline-none"
+          >
+            <option v-for="folder in galleryFolders" :key="folder.id" :value="folder.id">
+              {{ folder.name }}
+            </option>
+          </select>
+        </label>
         <div class="mt-2 border-t border-white/20 pt-2">
           <p class="mb-1 font-medium text-white/90">Formato</p>
           <label class="flex cursor-pointer items-center gap-2 py-0.5">
@@ -179,6 +190,17 @@
           <label class="flex cursor-pointer items-start gap-2 py-0.5">
             <input v-model="saveMode" type="radio" value="copy" class="mt-0.5 shrink-0" />
             <span>Manter o original e criar uma nova imagem</span>
+          </label>
+          <label v-if="showSaveCopyFolderPicker" class="mt-2 block">
+            <span class="mb-1 block text-white/80">Pasta da nova imagem</span>
+            <select
+              v-model="saveCopyFolderId"
+              class="w-full rounded-md border border-white/20 bg-black/40 px-2 py-1.5 text-white focus:border-white/40 focus:outline-none"
+            >
+              <option v-for="folder in galleryFolders" :key="folder.id" :value="folder.id">
+                {{ folder.name }}
+              </option>
+            </select>
           </label>
         </div>
         <div class="mt-3 flex flex-col gap-2">
@@ -283,36 +305,283 @@
             <div
               v-for="(callout, calloutIndex) in zoomCallouts"
               :key="callout.id"
-              class="absolute z-[25] overflow-hidden shadow-lg transition-shadow"
-              :class="callout.id === selectedZoomCalloutId ? 'ring-4 ring-violet-300' : 'ring-2 ring-violet-500'"
+              class="absolute z-[25] overflow-visible shadow-lg transition-shadow"
+              :class="
+                canEditZoomCallouts && callout.id === selectedZoomCalloutId
+                  ? 'ring-4 ring-violet-300'
+                  : canEditZoomCallouts
+                    ? 'ring-2 ring-violet-500'
+                    : ''
+              "
               :style="zoomCalloutBoxStyle(callout)"
-              @click.stop="selectZoomCallout(callout.id)"
+              @click.stop="canEditZoomCallouts && selectZoomCallout(callout.id)"
             >
-              <img
-                :src="callout.src"
-                alt=""
-                class="zoom-callout-img pointer-events-none absolute inset-0 block h-full w-full"
-                draggable="false"
-              />
+              <div class="absolute inset-0 overflow-hidden rounded-sm">
+                <img
+                  :src="callout.src"
+                  alt=""
+                  class="zoom-callout-img pointer-events-none absolute inset-0 block h-full w-full"
+                  draggable="false"
+                />
+              </div>
               <div
+                v-if="canEditZoomCallouts && !zoomDetailSelecting"
                 class="absolute inset-0 z-0 cursor-move touch-none"
                 title="Arrastar detalhe"
                 @mousedown.stop.prevent="startZoomCalloutMove($event, callout.id)"
-                @touchstart.stop.prevent="startZoomCalloutMove($event, callout.id)"
+                @touchstart.prevent="startZoomCalloutMove($event, callout.id)"
               />
               <div
-                class="absolute -bottom-1 -right-1 z-10 h-4 w-4 cursor-se-resize rounded-sm border border-violet-200 bg-violet-600/90"
+                v-if="canEditZoomCallouts && !zoomDetailSelecting"
+                class="absolute -bottom-1 -right-1 z-10 h-3 w-3 cursor-se-resize rounded-sm border border-violet-200 bg-violet-600/90"
                 title="Redimensionar detalhe"
                 @mousedown.stop.prevent="startZoomCalloutResize($event, callout.id)"
                 @touchstart.stop.prevent="startZoomCalloutResize($event, callout.id)"
               />
               <button
+                v-if="canEditZoomCallouts"
                 type="button"
                 title="Remover detalhe"
-                class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white"
+                class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white shadow"
                 @click.stop="removeZoomCallout(callout.id)"
               >×</button>
             </div>
+            <svg
+              v-if="showLayoutDrawingsOverlay"
+              class="pointer-events-none absolute inset-0 z-[26] h-full w-full overflow-visible"
+              preserveAspectRatio="none"
+              :viewBox="layoutDrawingSvgViewBox"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <template v-for="(shape, idx) in layoutDrawingOverlayShapes" :key="'layout-draw-' + idx">
+                <line
+                  v-if="shape.kind === 'line'"
+                  :x1="shape.x1"
+                  :y1="shape.y1"
+                  :x2="shape.x2"
+                  :y2="shape.y2"
+                  :stroke="shape.stroke"
+                  :stroke-width="shape.strokeWidth"
+                  stroke-linecap="round"
+                  vector-effect="non-scaling-stroke"
+                />
+                <g v-else-if="shape.kind === 'arrow'">
+                  <line
+                    :x1="shape.x1"
+                    :y1="shape.y1"
+                    :x2="shape.shaftX"
+                    :y2="shape.shaftY"
+                    :stroke="shape.stroke"
+                    :stroke-width="shape.strokeWidth"
+                    stroke-linecap="round"
+                    vector-effect="non-scaling-stroke"
+                  />
+                  <polygon :points="shape.headPoints" :fill="shape.stroke" stroke="none" />
+                </g>
+                <rect
+                  v-else-if="shape.kind === 'rectangle'"
+                  :x="shape.x"
+                  :y="shape.y"
+                  :width="shape.width"
+                  :height="shape.height"
+                  :stroke="shape.stroke"
+                  :stroke-width="shape.strokeWidth"
+                  :fill="shape.fill"
+                  :fill-opacity="shape.fillOpacity"
+                  vector-effect="non-scaling-stroke"
+                />
+                <ellipse
+                  v-else-if="shape.kind === 'ellipse'"
+                  :cx="shape.cx"
+                  :cy="shape.cy"
+                  :rx="shape.rx"
+                  :ry="shape.ry"
+                  :stroke="shape.stroke"
+                  :stroke-width="shape.strokeWidth"
+                  :fill="shape.fill"
+                  :fill-opacity="shape.fillOpacity"
+                  vector-effect="non-scaling-stroke"
+                />
+                <circle
+                  v-else-if="shape.kind === 'circle'"
+                  :cx="shape.cx"
+                  :cy="shape.cy"
+                  :r="shape.r"
+                  :stroke="shape.stroke"
+                  :stroke-width="shape.strokeWidth"
+                  :fill="shape.fill"
+                  :fill-opacity="shape.fillOpacity"
+                  vector-effect="non-scaling-stroke"
+                />
+                <polyline
+                  v-else-if="shape.kind === 'pen'"
+                  :points="shape.points"
+                  :stroke="shape.stroke"
+                  :stroke-width="shape.strokeWidth"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                />
+                <polyline
+                  v-else-if="shape.kind === 'polygon'"
+                  :points="shape.points"
+                  :stroke="shape.stroke"
+                  :stroke-width="shape.strokeWidth"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                />
+                <path
+                  v-else-if="shape.kind === 'bezier'"
+                  :d="shape.d"
+                  :stroke="shape.stroke"
+                  :stroke-width="shape.strokeWidth"
+                  fill="none"
+                  stroke-linecap="round"
+                  vector-effect="non-scaling-stroke"
+                />
+                <circle
+                  v-else-if="shape.kind === 'pixel'"
+                  :cx="shape.cx"
+                  :cy="shape.cy"
+                  r="2"
+                  :fill="shape.stroke"
+                />
+              </template>
+            </svg>
+            <svg
+              v-if="showLayoutDrawingLiveOverlay"
+              class="pointer-events-none absolute inset-0 z-[27] h-full w-full overflow-visible"
+              preserveAspectRatio="none"
+              :viewBox="layoutDrawingSvgViewBox"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <g
+                v-if="drawingRubberBand"
+                :stroke="drawStrokeColor"
+                :stroke-width="Math.max(1, drawStrokeWidth)"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+                vector-effect="non-scaling-stroke"
+              >
+                <line
+                  v-if="drawingRubberBand.tool === 'line'"
+                  :x1="drawingRubberBand.x0"
+                  :y1="drawingRubberBand.y0"
+                  :x2="drawingRubberBand.x1"
+                  :y2="drawingRubberBand.y1"
+                />
+                <g v-else-if="drawingRubberBand.tool === 'arrow'">
+                  <line
+                    :x1="drawingRubberBand.x0"
+                    :y1="drawingRubberBand.y0"
+                    :x2="drawingRubberBand.shaftX"
+                    :y2="drawingRubberBand.shaftY"
+                  />
+                  <polygon
+                    :points="drawingRubberBand.headPoints"
+                    :fill="drawStrokeColor"
+                    stroke="none"
+                  />
+                </g>
+                <rect
+                  v-else-if="drawingRubberBand.tool === 'rectangle'"
+                  :x="drawingRubberBand.left"
+                  :y="drawingRubberBand.top"
+                  :width="drawingRubberBand.w"
+                  :height="drawingRubberBand.h"
+                  :fill="drawingPreviewFill"
+                  :fill-opacity="drawingPreviewFillOpacity"
+                  :stroke="drawStrokeColor"
+                />
+                <ellipse
+                  v-else-if="drawingRubberBand.tool === 'ellipse'"
+                  :cx="drawingRubberBand.cx"
+                  :cy="drawingRubberBand.cy"
+                  :rx="drawingRubberBand.rx"
+                  :ry="drawingRubberBand.ry"
+                  :fill="drawingPreviewFill"
+                  :fill-opacity="drawingPreviewFillOpacity"
+                  :stroke="drawStrokeColor"
+                />
+                <circle
+                  v-else-if="drawingRubberBand.tool === 'circle'"
+                  :cx="drawingRubberBand.cx"
+                  :cy="drawingRubberBand.cy"
+                  :r="drawingRubberBand.r"
+                  :fill="drawingPreviewFill"
+                  :fill-opacity="drawingPreviewFillOpacity"
+                  :stroke="drawStrokeColor"
+                />
+              </g>
+              <g
+                v-else-if="drawingTool === 'pen' && penDraftPoints.length > 1"
+                :stroke="drawStrokeColor"
+                :stroke-width="Math.max(1, drawStrokeWidth)"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+                vector-effect="non-scaling-stroke"
+              >
+                <polyline :points="penDraftPointsAttr" />
+              </g>
+              <g
+                v-else-if="drawingTool === 'polygon' && pathDraftPoints.length > 0"
+                :stroke="drawStrokeColor"
+                :stroke-width="Math.max(1, drawStrokeWidth)"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+                vector-effect="non-scaling-stroke"
+              >
+                <polyline :points="polygonDraftPointsAttr" />
+                <line
+                  v-if="pathDraftHoverPos"
+                  :x1="pathDraftPoints[pathDraftPoints.length - 1].x"
+                  :y1="pathDraftPoints[pathDraftPoints.length - 1].y"
+                  :x2="pathDraftHoverPos.x"
+                  :y2="pathDraftHoverPos.y"
+                  stroke-dasharray="6 5"
+                  class="opacity-90"
+                />
+              </g>
+              <g
+                v-else-if="drawingTool === 'bezier' && pathDraftPoints.length > 0"
+                :stroke="drawStrokeColor"
+                :stroke-width="Math.max(1, drawStrokeWidth)"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+                vector-effect="non-scaling-stroke"
+              >
+                <template v-if="pathDraftPoints.length < 3">
+                  <polyline :points="polygonDraftPointsAttr" />
+                  <line
+                    v-if="pathDraftHoverPos"
+                    :x1="pathDraftPoints[pathDraftPoints.length - 1].x"
+                    :y1="pathDraftPoints[pathDraftPoints.length - 1].y"
+                    :x2="pathDraftHoverPos.x"
+                    :y2="pathDraftHoverPos.y"
+                    stroke-dasharray="6 5"
+                    class="opacity-85"
+                  />
+                </template>
+                <path v-else-if="bezierDraftPathD" :d="bezierDraftPathD" />
+              </g>
+            </svg>
+            <div
+              v-if="isDrawingCaptureActive && zoomLayout"
+              class="absolute inset-0 z-[30] touch-none cursor-crosshair"
+              @mousedown="onDrawingSurfaceMouseDown"
+              @click.stop="onDrawingSurfaceClick"
+              @touchstart="onDrawingSurfaceTouchStart"
+              @mousemove="onDrawingSurfaceMoveDrawingDraft"
+              @mouseleave="onDrawingSurfaceLeaveDrawingDraft"
+              @touchmove="onDrawingSurfaceMoveDrawingDraft"
+            />
             <div
               v-if="zoomDetailSelecting"
               class="absolute z-[18] cursor-crosshair touch-none"
@@ -340,9 +609,9 @@
           class="editor-view-img h-full w-full"
           :class="[imageCursorClass, { 'cursor-crosshair': zoomDetailMode && zoomDetailSelecting }]"
           :style="maskBrushCursorStyle"
-          @mousemove="onImageMoveDrawingDraft"
-          @mouseleave="onImageLeaveDrawingDraft"
-          @touchmove="onImageMoveDrawingDraft"
+          @mousemove="onDrawingSurfaceMoveDrawingDraft"
+          @mouseleave="onDrawingSurfaceLeaveDrawingDraft"
+          @touchmove="onDrawingSurfaceMoveDrawingDraft"
         />
         <div
           v-if="zoomDetailMode && zoomDetailSelecting && zoomSelectImgStyle"
@@ -685,22 +954,24 @@
           v-for="ov in imageOverlays"
           v-show="isBlankCanvas && !zoomLayout && !shouldBakeImageOverlaysInPreview"
           :key="ov.id"
-          class="absolute z-[22] select-none touch-none ring-1 ring-white/70"
+          class="absolute z-[22] select-none touch-none overflow-visible ring-1 ring-white/70"
           :class="{
             'pointer-events-none': !canMoveImageOverlays,
             'ring-2 ring-sky-400': selectedOverlayId === ov.id
           }"
           :style="overlayBoxStyle(ov)"
         >
-          <div
-            class="relative h-full w-full cursor-move overflow-hidden rounded-sm bg-black/20"
-            :title="canMoveImageOverlays ? 'Arrastar para mover' : 'Selecione outra ferramenta ou feche Desenho para mover'"
-            @mousedown.stop="startOverlayMove($event, ov.id)"
-            @touchstart.stop="startOverlayMove($event, ov.id)"
-          >
-            <img :src="ov.src" alt="" class="pointer-events-none h-full w-full" draggable="false" style="object-fit: fill" />
             <div
-              class="absolute -bottom-1 -right-1 z-10 h-4 w-4 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
+              class="relative h-full w-full cursor-move overflow-visible rounded-sm bg-black/20"
+              :title="canMoveImageOverlays ? 'Arrastar para mover' : 'Selecione outra ferramenta ou feche Desenho para mover'"
+              @mousedown.stop="startOverlayMove($event, ov.id)"
+              @touchstart.stop="startOverlayMove($event, ov.id)"
+            >
+            <div class="absolute inset-0 overflow-hidden rounded-sm">
+              <img :src="ov.src" alt="" class="pointer-events-none h-full w-full" draggable="false" style="object-fit: fill" />
+            </div>
+            <div
+              class="absolute -bottom-1 -right-1 z-10 h-3 w-3 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
               title="Redimensionar"
               @mousedown.stop.prevent="startOverlayResize($event, ov.id)"
               @touchstart.stop.prevent="startOverlayResize($event, ov.id)"
@@ -708,7 +979,7 @@
             <button
               type="button"
               title="Remover imagem"
-              class="absolute -top-2 -right-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white"
+              class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white shadow"
               @click.stop="removeImageOverlay(ov.id)"
             >×</button>
           </div>
@@ -836,15 +1107,15 @@
         </div>
         <!-- Camada de desenho por cima da composição (folha + imagens arrastadas) -->
         <div
-          v-if="isDrawingCaptureActive"
+          v-if="isDrawingCaptureActive && !zoomLayout"
           class="absolute inset-0 z-[30] touch-none"
           :class="imageCursorClass"
-          @mousedown="onImageMouseDown"
-          @click="onImageClickUnified"
-          @touchstart="onImageTouchStartUnified"
-          @mousemove="onImageMoveDrawingDraft"
-          @mouseleave="onImageLeaveDrawingDraft"
-          @touchmove="onImageMoveDrawingDraft"
+          @mousedown="onDrawingSurfaceMouseDown"
+          @click="onDrawingSurfaceClick"
+          @touchstart="onDrawingSurfaceTouchStart"
+          @mousemove="onDrawingSurfaceMoveDrawingDraft"
+          @mouseleave="onDrawingSurfaceLeaveDrawingDraft"
+          @touchmove="onDrawingSurfaceMoveDrawingDraft"
         />
         </div>
       </div>
@@ -1244,7 +1515,7 @@
                   </div>
                 </div>
                 <p v-if="drawingTool === 'bezier'" class="text-center text-amber-200/90">4 pontos (curva cúbica)</p>
-                <p v-if="drawings.length && (drawingTool || showDrawingMenu)" class="text-center text-emerald-200/90">
+                <p v-if="(drawings.length || layoutDrawings.length) && (drawingTool || showDrawingMenu)" class="text-center text-emerald-200/90">
                   Feche o Desenho para mover os traços na foto.
                 </p>
               </div>
@@ -1327,7 +1598,7 @@
           <div class="relative">
             <button
               type="button"
-              :title="zoomDetailMode ? 'Fechar detalhe ampliado' : 'Detalhe ampliado — escolher zona e colocar no ecrã'"
+              :title="zoomDetailMode ? 'Fechar painel (o zoom mantém-se)' : (zoomLayout ? 'Editar detalhe ampliado' : 'Detalhe ampliado — escolher zona e colocar no ecrã')"
               @click="toggleZoomDetailMode"
               class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
               :class="{ 'bg-violet-600': zoomDetailMode || zoomLayout, 'ring-2 ring-violet-200/60': zoomDetailMode }"
@@ -1381,6 +1652,14 @@
                 @click="startAnotherZoomCallout"
               >
                 + Nova zona
+              </button>
+              <button
+                v-if="zoomLayout"
+                type="button"
+                class="mt-1.5 w-full rounded-lg px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                @click="removeAllZoomCallouts"
+              >
+                Remover todos os detalhes
               </button>
             </div>
           </div>
@@ -1525,8 +1804,15 @@
                 </div>
               </div>
               <div>
-                <label class="mb-1 block text-sm text-white">Tamanho do texto: {{ captionSettings.fontSize }} px</label>
-                <input v-model.number="captionSettings.fontSize" type="range" min="10" max="36" class="w-full accent-white" />
+                <label class="mb-1 block text-sm text-white">Tamanho do texto: {{ captionSettings.fontSize }} px (ecrã)</label>
+                <input
+                  v-model.number="captionSettings.fontSize"
+                  type="range"
+                  min="10"
+                  max="120"
+                  class="w-full accent-white"
+                  @input="onCaptionSettingsChange"
+                />
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <button
@@ -1784,6 +2070,14 @@ const props = defineProps({
   galleryTotal: {
     type: Number,
     default: 0
+  },
+  galleryFoldersEnabled: {
+    type: Boolean,
+    default: false
+  },
+  galleryFolders: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -1828,8 +2122,20 @@ const saturation = ref(0)
 const gamma = ref(0)
 const gammaFine = ref(0)
 const saveMode = ref(props.showUseInForm ? 'copy' : 'overwrite')
+const saveCopyFolderId = ref(props.photo?.folder_id || 'entrada')
 const saveFormat = ref('jpeg')
 const saveQuality = ref(85)
+
+const showSaveCopyFolderPicker = computed(
+  () => props.galleryFoldersEnabled && saveMode.value === 'copy' && props.galleryFolders.length > 0
+)
+
+watch(
+  () => props.photo?.folder_id,
+  (folderId) => {
+    saveCopyFolderId.value = folderId || 'entrada'
+  }
+)
 const showSavePanel = ref(false)
 const showUseInFormWarning = ref(false)
 const isSaving = ref(false)
@@ -1965,9 +2271,27 @@ const showDrawingsOverlay = computed(
   () => drawings.value.length > 0 && !zoomLayout.value
 )
 
+const usesLayoutDrawingSpace = computed(() => Boolean(zoomLayout.value))
+
+const showLayoutDrawingsOverlay = computed(
+  () => usesLayoutDrawingSpace.value && layoutDrawings.value.length > 0
+)
+
+const canEditZoomCallouts = computed(
+  () => Boolean(zoomDetailMode.value) && !drawingTool.value && !showDrawingMenu.value
+)
+
+const layoutDrawingSvgViewBox = computed(() => {
+  const layout = zoomLayout.value
+  if (!layout) {
+    return '0 0 1 1'
+  }
+  return `0 0 ${layout.canvasWidth} ${layout.canvasHeight}`
+})
+
 /** Camada por cima da composição enquanto uma ferramenta de desenho está selecionada. */
 const isDrawingCaptureActive = computed(() => {
-  if (!drawingTool.value || zoomLayout.value || showCrop.value) {
+  if (!drawingTool.value || showCrop.value) {
     return false
   }
   if (showBlurRegion.value && blurShapeMode.value === 'rectangle') {
@@ -2065,6 +2389,8 @@ let maskBrushStrokeErase = false
 let maskBrushImageKey = ''
 /** Desenhos vectoriais (coordenadas em pixels da imagem natural). */
 const drawings = ref([])
+/** Desenhos na composição de zoom (coordenadas do canvas branco). */
+const layoutDrawings = ref([])
 const drawingTool = ref(null)
 const drawStrokeColor = ref('#FFFF00')
 const drawFillColor = ref('#FF000066')
@@ -2398,6 +2724,7 @@ const captureEditSnapshot = () => ({
   pixelateApplyGlobal: pixelateApplyGlobal.value,
   maskBrushRadiusNatural: maskBrushRadiusNatural.value,
   drawings: cloneJson(drawings.value),
+  layoutDrawings: cloneJson(layoutDrawings.value),
   imageOverlays: cloneJson(imageOverlays.value),
   selectedOverlayId: selectedOverlayId.value,
   captionSettings: cloneJson(captionSettings.value),
@@ -2535,6 +2862,7 @@ const restoreEditSnapshot = async (snap) => {
   pixelateApplyGlobal.value = Boolean(snap.pixelateApplyGlobal)
   maskBrushRadiusNatural.value = snap.maskBrushRadiusNatural
   drawings.value = cloneJson(snap.drawings)
+  layoutDrawings.value = cloneJson(snap.layoutDrawings ?? [])
   imageOverlays.value = cloneJson(snap.imageOverlays)
   selectedOverlayId.value = snap.selectedOverlayId ?? imageOverlays.value[0]?.id ?? null
   captionSettings.value = snap.captionSettings
@@ -2889,12 +3217,24 @@ const drawingRubberBand = computed(() => {
 
 const showDrawingLiveOverlay = computed(
   () =>
-    !!drawingRubberBand.value ||
-    (drawingTool.value === 'pen' && penDraftPoints.value.length > 1) ||
-    (drawingTool.value === 'polygon' && pathDraftPoints.value.length > 0) ||
-    (drawingTool.value === 'bezier' &&
-      pathDraftPoints.value.length > 0 &&
-      pathDraftPoints.value.length < 4)
+    !usesLayoutDrawingSpace.value &&
+    (!!drawingRubberBand.value ||
+      (drawingTool.value === 'pen' && penDraftPoints.value.length > 1) ||
+      (drawingTool.value === 'polygon' && pathDraftPoints.value.length > 0) ||
+      (drawingTool.value === 'bezier' &&
+        pathDraftPoints.value.length > 0 &&
+        pathDraftPoints.value.length < 4))
+)
+
+const showLayoutDrawingLiveOverlay = computed(
+  () =>
+    usesLayoutDrawingSpace.value &&
+    (!!drawingRubberBand.value ||
+      (drawingTool.value === 'pen' && penDraftPoints.value.length > 1) ||
+      (drawingTool.value === 'polygon' && pathDraftPoints.value.length > 0) ||
+      (drawingTool.value === 'bezier' &&
+        pathDraftPoints.value.length > 0 &&
+        pathDraftPoints.value.length < 4))
 )
 
 const penDraftPointsAttr = computed(() =>
@@ -5071,29 +5411,24 @@ const startDrawingMove = (e, index) => {
   window.addEventListener('touchend', stopDrawingMove)
 }
 
-const drawingOverlayShapes = computed(() => {
-  void imageNaturalVersion.value
-  if (!showDrawingsOverlay.value) {
-    return []
-  }
-  const scale = displayStrokeScale.value
+const buildDrawingOverlayShapes = (list, mapPoint, strokeScale) => {
   const shapes = []
-  for (const d of drawings.value) {
+  for (const d of list) {
     if (!d || !d.type) {
       continue
     }
     const stroke = d.strokeColor || '#000000'
-    const strokeWidth = Math.max(1, (d.strokeWidth || 2) * scale)
+    const strokeWidth = Math.max(1, (d.strokeWidth || 2) * strokeScale)
     const fillProps = drawingFillDisplay(d)
     const t = d.type
     if (t === 'line' || t === 'arrow') {
-      const p0 = naturalPointToDisplay(d.x1, d.y1)
-      const p1 = naturalPointToDisplay(d.x2, d.y2)
+      const p0 = mapPoint(d.x1, d.y1)
+      const p1 = mapPoint(d.x2, d.y2)
       if (t === 'line') {
         shapes.push({ kind: 'line', x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke, strokeWidth })
         continue
       }
-      const head = arrowHeadLayout(p0.x, p0.y, p1.x, p1.y, strokeWidth / scale)
+      const head = arrowHeadLayout(p0.x, p0.y, p1.x, p1.y, strokeWidth / strokeScale)
       if (!head) {
         shapes.push({ kind: 'line', x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y, stroke, strokeWidth })
       } else {
@@ -5111,13 +5446,20 @@ const drawingOverlayShapes = computed(() => {
       continue
     }
     if (t === 'rectangle') {
-      const r = naturalRectToDisplay(d.x, d.y, d.width, d.height)
+      const r = mapPoint(d.x, d.y)
+      const r2 = mapPoint(d.x + d.width, d.y + d.height)
+      const rect = {
+        left: Math.min(r.x, r2.x),
+        top: Math.min(r.y, r2.y),
+        width: Math.abs(r2.x - r.x),
+        height: Math.abs(r2.y - r.y)
+      }
       shapes.push({
         kind: 'rectangle',
-        x: r.left,
-        y: r.top,
-        width: r.width,
-        height: r.height,
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
         stroke,
         strokeWidth,
         ...fillProps
@@ -5125,18 +5467,14 @@ const drawingOverlayShapes = computed(() => {
       continue
     }
     if (t === 'ellipse') {
-      const r = naturalRectToDisplay(
-        d.cx - d.width / 2,
-        d.cy - d.height / 2,
-        d.width,
-        d.height
-      )
+      const p0 = mapPoint(d.cx - d.width / 2, d.cy - d.height / 2)
+      const p1 = mapPoint(d.cx + d.width / 2, d.cy + d.height / 2)
       shapes.push({
         kind: 'ellipse',
-        cx: r.left + r.width / 2,
-        cy: r.top + r.height / 2,
-        rx: Math.max(1, r.width / 2),
-        ry: Math.max(1, r.height / 2),
+        cx: (p0.x + p1.x) / 2,
+        cy: (p0.y + p1.y) / 2,
+        rx: Math.max(1, Math.abs(p1.x - p0.x) / 2),
+        ry: Math.max(1, Math.abs(p1.y - p0.y) / 2),
         stroke,
         strokeWidth,
         ...fillProps
@@ -5144,17 +5482,13 @@ const drawingOverlayShapes = computed(() => {
       continue
     }
     if (t === 'circle') {
-      const r = naturalRectToDisplay(
-        d.cx - d.diameter / 2,
-        d.cy - d.diameter / 2,
-        d.diameter,
-        d.diameter
-      )
+      const p0 = mapPoint(d.cx - d.diameter / 2, d.cy - d.diameter / 2)
+      const p1 = mapPoint(d.cx + d.diameter / 2, d.cy + d.diameter / 2)
       shapes.push({
         kind: 'circle',
-        cx: r.left + r.width / 2,
-        cy: r.top + r.height / 2,
-        r: Math.max(1, Math.min(r.width, r.height) / 2),
+        cx: (p0.x + p1.x) / 2,
+        cy: (p0.y + p1.y) / 2,
+        r: Math.max(1, Math.min(Math.abs(p1.x - p0.x), Math.abs(p1.y - p0.y)) / 2),
         stroke,
         strokeWidth,
         ...fillProps
@@ -5165,7 +5499,7 @@ const drawingOverlayShapes = computed(() => {
       shapes.push({
         kind: 'pen',
         points: d.points.map((p) => {
-          const pt = naturalPointToDisplay(p.x, p.y)
+          const pt = mapPoint(p.x, p.y)
           return `${pt.x},${pt.y}`
         }).join(' '),
         stroke,
@@ -5177,7 +5511,7 @@ const drawingOverlayShapes = computed(() => {
       shapes.push({
         kind: 'polygon',
         points: d.points.map((p) => {
-          const pt = naturalPointToDisplay(p.x, p.y)
+          const pt = mapPoint(p.x, p.y)
           return `${pt.x},${pt.y}`
         }).join(' '),
         stroke,
@@ -5186,7 +5520,7 @@ const drawingOverlayShapes = computed(() => {
       continue
     }
     if (t === 'bezier' && Array.isArray(d.points) && d.points.length >= 4) {
-      const pts = d.points.map((p) => naturalPointToDisplay(p.x, p.y))
+      const pts = d.points.map((p) => mapPoint(p.x, p.y))
       shapes.push({
         kind: 'bezier',
         d: `M ${pts[0].x} ${pts[0].y} C ${pts[1].x} ${pts[1].y} ${pts[2].x} ${pts[2].y} ${pts[3].x} ${pts[3].y}`,
@@ -5195,12 +5529,36 @@ const drawingOverlayShapes = computed(() => {
       })
       continue
     }
-    if (t === 'pixel') {
-      const p = naturalPointToDisplay(d.x, d.y)
+    if (t === 'pixel' || t === 'fill') {
+      const p = mapPoint(d.x, d.y)
       shapes.push({ kind: 'pixel', cx: p.x, cy: p.y, stroke })
     }
   }
   return shapes
+}
+
+const drawingOverlayShapes = computed(() => {
+  void imageNaturalVersion.value
+  if (!showDrawingsOverlay.value) {
+    return []
+  }
+  return buildDrawingOverlayShapes(
+    drawings.value,
+    naturalPointToDisplay,
+    displayStrokeScale.value
+  )
+})
+
+const layoutDrawingOverlayShapes = computed(() => {
+  zoomLayout.value
+  if (!showLayoutDrawingsOverlay.value) {
+    return []
+  }
+  return buildDrawingOverlayShapes(
+    layoutDrawings.value,
+    (x, y) => ({ x, y }),
+    1
+  )
 })
 
 const naturalRectToDisplay = (nx, ny, nw, nh) => {
@@ -5245,7 +5603,9 @@ const buildTextItemFromPanel = (content, x, y) => ({
   bold: textBold.value,
   angle: textAngle.value,
   align: textAlign.value,
-  stroke_width: textStrokeEnabled.value ? Math.max(1, textStrokeWidth.value) : 0,
+  stroke_width: textStrokeEnabled.value
+    ? Math.max(1, displayTextSizeToNatural(textStrokeWidth.value))
+    : 0,
   stroke_color: textStrokeEnabled.value ? textStrokeColor.value : null,
   background_color: textBgEnabled.value ? textBgColor.value : null,
   background_opacity: textBgEnabled.value ? textBgOpacity.value : null,
@@ -5260,7 +5620,8 @@ const loadTextSettingsFromItem = (t) => {
   textAngle.value = t.angle ?? 0
   textAlign.value = t.align || 'left'
   textStrokeEnabled.value = (t.stroke_width ?? 0) > 0
-  textStrokeWidth.value = t.stroke_width > 0 ? t.stroke_width : 2
+  textStrokeWidth.value =
+    t.stroke_width > 0 ? naturalTextSizeToDisplay(t.stroke_width) : 2
   textStrokeColor.value = t.stroke_color || '#000000'
   textBgEnabled.value = Boolean(t.background_color)
   textBgColor.value = t.background_color || '#000000'
@@ -5442,12 +5803,18 @@ const wrapCaptionTextToWidth = (text, fontSize, maxWidth) => {
   return out.join('\n')
 }
 
+const captionFontSizeNatural = () =>
+  displayTextSizeToNatural(captionSettings.value.fontSize)
+
+const captionBandPaddingNatural = () =>
+  displayTextSizeToNatural(captionSettings.value.bandPadding)
+
 const estimateCaptionBandHeightNat = (number, description, widthNat) => {
   if (!widthNat || widthNat < 2) {
     return 0
   }
-  const fontSize = captionSettings.value.fontSize
-  const padding = captionSettings.value.bandPadding
+  const fontSize = captionFontSizeNatural()
+  const padding = captionBandPaddingNatural()
   const innerW = Math.max(1, widthNat - padding * 2)
   const content = formatCaptionText(number, description)
   const wrapped = wrapCaptionTextToWidth(content, fontSize, innerW)
@@ -5481,9 +5848,9 @@ const photoCaptionBandStyle = computed(() => {
 })
 
 const photoCaptionTextStyle = computed(() => {
-  const scale = imageDisplayScale()
+  void imageNaturalVersion.value
   return {
-    fontSize: `${Math.max(9, captionSettings.value.fontSize * scale)}px`,
+    fontSize: `${Math.max(9, captionSettings.value.fontSize)}px`,
     color: captionSettings.value.color,
     fontWeight: captionSettings.value.bold ? '700' : '400',
     lineHeight: 1.3
@@ -5495,8 +5862,8 @@ const hasActiveCaptions = computed(() => photoCaptionApplied.value !== null)
 const buildCaptionSettingsPayload = () => ({
   prefix: captionSettings.value.prefix || '',
   separator: captionSettings.value.separator || ' — ',
-  font_size: Math.round(captionSettings.value.fontSize),
-  band_padding: Math.round(captionSettings.value.bandPadding),
+  font_size: Math.round(captionFontSizeNatural()),
+  band_padding: Math.round(captionBandPaddingNatural()),
   color: captionSettings.value.color,
   bold: Boolean(captionSettings.value.bold)
 })
@@ -5964,6 +6331,52 @@ const clientToLayoutBoard = (e) => {
   return { x: (cx - rect.left) / m.scale, y: (cy - rect.top) / m.scale }
 }
 
+const drawingPointerForEvent = (e) => {
+  if (usesLayoutDrawingSpace.value) {
+    const p = clientToLayoutBoard(e)
+    return {
+      draft: { x: p.x, y: p.y },
+      stored: { x: Math.round(p.x), y: Math.round(p.y) }
+    }
+  }
+  const p = clientToImgLocal(e)
+  return {
+    draft: { x: p.x, y: p.y },
+    stored: displayPointToNatural(p.x, p.y)
+  }
+}
+
+const draftPointToStored = (pt) => {
+  if (usesLayoutDrawingSpace.value) {
+    return { x: Math.round(pt.x), y: Math.round(pt.y) }
+  }
+  return displayPointToNatural(pt.x, pt.y)
+}
+
+const draftRectToStored = (left, top, w, h) => {
+  if (usesLayoutDrawingSpace.value) {
+    return {
+      x: Math.round(left),
+      y: Math.round(top),
+      width: Math.max(2, Math.round(w)),
+      height: Math.max(2, Math.round(h))
+    }
+  }
+  return displayRectToNatural(left, top, w, h)
+}
+
+const pushActiveDrawing = (shape) => {
+  if (usesLayoutDrawingSpace.value) {
+    layoutDrawings.value.push(shape)
+  } else {
+    drawings.value.push(shape)
+  }
+}
+
+const deselectZoomCallout = () => {
+  selectedZoomCalloutId.value = null
+}
+
 const calloutSizeForSourceRect = (sourceRect, layout, natW, natH, levelPercent = zoomDetailLevel.value) => {
   const mul = Math.max(50, Math.min(400, levelPercent)) / 100
   const sx = (layout.base.width / Math.max(1, natW)) * mul
@@ -6068,7 +6481,7 @@ const addZoomCalloutFromSourceRect = async (sourceRect, src) => {
   })
   ensureLayoutFitsCallouts()
   zoomDetailSelecting.value = false
-  selectedZoomCalloutId.value = newId
+  selectedZoomCalloutId.value = null
 }
 
 const onWindowZoomSelectMove = (e) => {
@@ -6260,18 +6673,17 @@ const removeZoomCallout = (id) => {
   }
   if (zoomCallouts.value.length === 0) {
     zoomLayout.value = null
+    layoutDrawings.value = []
     zoomDetailSelecting.value = true
     selectedZoomCalloutId.value = null
   }
 }
 
-const clearZoomDetailState = () => {
+/** Fecha o painel de zoom sem apagar a composição já criada. */
+const closeZoomDetailPanel = () => {
   zoomDetailMode.value = false
   zoomDetailSelecting.value = false
-  zoomDetailLevel.value = 150
-  selectedZoomCalloutId.value = null
-  zoomLayout.value = null
-  zoomCallouts.value = []
+  deselectZoomCallout()
   zoomSelectDrag.value = null
   stopZoomCalloutMove()
   stopZoomCalloutResize()
@@ -6281,6 +6693,23 @@ const clearZoomDetailState = () => {
   window.removeEventListener('touchend', onWindowZoomSelectEnd)
 }
 
+const removeAllZoomCallouts = () => {
+  zoomCallouts.value = []
+  zoomLayout.value = null
+  layoutDrawings.value = []
+  selectedZoomCalloutId.value = null
+  zoomDetailSelecting.value = true
+}
+
+const clearZoomDetailState = () => {
+  closeZoomDetailPanel()
+  zoomDetailLevel.value = 150
+  selectedZoomCalloutId.value = null
+  zoomLayout.value = null
+  zoomCallouts.value = []
+  layoutDrawings.value = []
+}
+
 const startAnotherZoomCallout = () => {
   zoomDetailSelecting.value = true
 }
@@ -6288,7 +6717,7 @@ const startAnotherZoomCallout = () => {
 const toggleZoomDetailMode = () => {
   closeDrawingMenu()
   if (zoomDetailMode.value) {
-    clearZoomDetailState()
+    closeZoomDetailPanel()
     return
   }
   commitPendingEffectEdits()
@@ -6296,7 +6725,7 @@ const toggleZoomDetailMode = () => {
   drawingTool.value = null
   activeControl.value = null
   zoomDetailMode.value = true
-  zoomDetailSelecting.value = true
+  zoomDetailSelecting.value = !zoomLayout.value
 }
 
 const drawingStylePayload = () => {
@@ -6501,24 +6930,24 @@ const onSpaceKeyUp = (e) => {
   }
 }
 
-const onImageMoveDrawingDraft = (e) => {
+const onDrawingSurfaceMoveDrawingDraft = (e) => {
   const t = drawingTool.value
   const pts = pathDraftPoints.value
   if (t === 'polygon' && pts.length > 0) {
-    pathDraftHoverPos.value = clientToImgLocal(e)
+    pathDraftHoverPos.value = drawingPointerForEvent(e).draft
     return
   }
   if (t === 'bezier' && pts.length > 0 && pts.length < 4) {
     if (e.type === 'touchmove' && e.cancelable) {
       e.preventDefault()
     }
-    pathDraftHoverPos.value = clientToImgLocal(e)
+    pathDraftHoverPos.value = drawingPointerForEvent(e).draft
     return
   }
   pathDraftHoverPos.value = null
 }
 
-const onImageLeaveDrawingDraft = () => {
+const onDrawingSurfaceLeaveDrawingDraft = () => {
   pathDraftHoverPos.value = null
 }
 
@@ -6577,10 +7006,11 @@ const onPenStrokeMove = (e) => {
   if (e.cancelable && e.type === 'touchmove') {
     e.preventDefault()
   }
-  const p = clientToImgLocal(e)
+  const p = drawingPointerForEvent(e).draft
   const pts = penDraftPoints.value
   const last = pts[pts.length - 1]
-  if (last && Math.hypot(p.x - last.x, p.y - last.y) < 2) {
+  const minDist = usesLayoutDrawingSpace.value ? 1 : 2
+  if (last && Math.hypot(p.x - last.x, p.y - last.y) < minDist) {
     return
   }
   penDraftPoints.value = [...pts, p]
@@ -6589,13 +7019,13 @@ const onPenStrokeMove = (e) => {
 const onPenStrokeEnd = () => {
   stopPenStroke()
   const nat = simplifyPenPointsNatural(
-    penDraftPoints.value.map(({ x, y }) => displayPointToNatural(x, y))
+    penDraftPoints.value.map((pt) => draftPointToStored(pt))
   )
   penDraftPoints.value = []
   if (nat.length < 2) {
     return
   }
-  drawings.value.push({
+  pushActiveDrawing({
     type: 'pen',
     points: nat.map((p) => ({ x: p.x, y: p.y })),
     ...drawingStylePayload()
@@ -6619,6 +7049,7 @@ const toggleDrawingMenu = () => {
     closeDrawingPanel()
     return
   }
+  closeZoomDetailPanel()
   commitPendingEffectEdits()
   showDrawingMenu.value = true
   activeControl.value = null
@@ -6777,6 +7208,8 @@ const selectPixelateGlobal = () => {
 }
 
 const selectDrawingTool = (tool) => {
+  deselectZoomCallout()
+  closeZoomDetailPanel()
   commitPendingEffectEdits()
   showPixelateMenu.value = false
   showBlurMenu.value = false
@@ -6805,13 +7238,18 @@ const clearDrawings = () => {
   stopDrawingMove()
   penDraftPoints.value = []
   drawings.value = []
+  layoutDrawings.value = []
   pathDraftPoints.value = []
   pathDraftHoverPos.value = null
   recordEditHistory()
 }
 
 const undoLastDrawing = () => {
-  drawings.value.pop()
+  if (usesLayoutDrawingSpace.value) {
+    layoutDrawings.value.pop()
+  } else {
+    drawings.value.pop()
+  }
   recordEditHistory()
 }
 
@@ -6819,10 +7257,10 @@ const commitPolygonFromPath = () => {
   if (pathDraftPoints.value.length < 3) {
     return
   }
-  const pts = pathDraftPoints.value.map(({ x, y }) => displayPointToNatural(x, y))
+  const pts = pathDraftPoints.value.map((pt) => draftPointToStored(pt))
   pathDraftPoints.value = []
   pathDraftHoverPos.value = null
-  drawings.value.push({
+  pushActiveDrawing({
     type: 'polygon',
     points: pts.map((p) => ({ x: p.x, y: p.y })),
     ...drawingStylePayload()
@@ -6834,10 +7272,10 @@ const commitBezierFromPath = () => {
   if (pathDraftPoints.value.length < 4) {
     return
   }
-  const pts = pathDraftPoints.value.slice(0, 4).map(({ x, y }) => displayPointToNatural(x, y))
+  const pts = pathDraftPoints.value.slice(0, 4).map((pt) => draftPointToStored(pt))
   pathDraftPoints.value = []
   pathDraftHoverPos.value = null
-  drawings.value.push({
+  pushActiveDrawing({
     type: 'bezier',
     points: pts.map((p) => ({ x: p.x, y: p.y })),
     ...drawingStylePayload()
@@ -6854,7 +7292,7 @@ const onWindowDrawMove = (e) => {
   if (!drawDrag.value?.active) {
     return
   }
-  const p = clientToImgLocal(e)
+  const p = drawingPointerForEvent(e).draft
   drawDrag.value = { ...drawDrag.value, x1: p.x, y1: p.y }
 }
 
@@ -6877,9 +7315,9 @@ const onWindowDrawEnd = () => {
   const w = Math.abs(x1 - x0)
   const h = Math.abs(y1 - y0)
   if (t === 'line' || t === 'arrow') {
-    const p0 = displayPointToNatural(x0, y0)
-    const p1 = displayPointToNatural(x1, y1)
-    drawings.value.push({
+    const p0 = draftPointToStored({ x: x0, y: y0 })
+    const p1 = draftPointToStored({ x: x1, y: y1 })
+    pushActiveDrawing({
       type: t,
       x1: p0.x,
       y1: p0.y,
@@ -6891,12 +7329,12 @@ const onWindowDrawEnd = () => {
     finishVectorDrawingEdit()
     return
   }
-  const r = displayRectToNatural(left, top, w, h)
+  const r = draftRectToStored(left, top, w, h)
   if (r.width < 2 || r.height < 2) {
     return
   }
   if (t === 'rectangle') {
-    drawings.value.push({
+    pushActiveDrawing({
       type: 'rectangle',
       x: r.x,
       y: r.y,
@@ -6905,7 +7343,7 @@ const onWindowDrawEnd = () => {
       ...drawingStylePayload()
     })
   } else if (t === 'ellipse') {
-    drawings.value.push({
+    pushActiveDrawing({
       type: 'ellipse',
       cx: Math.round(r.x + r.width / 2),
       cy: Math.round(r.y + r.height / 2),
@@ -6915,7 +7353,7 @@ const onWindowDrawEnd = () => {
     })
   } else if (t === 'circle') {
     const d = Math.max(2, Math.min(r.width, r.height))
-    drawings.value.push({
+    pushActiveDrawing({
       type: 'circle',
       cx: Math.round(r.x + r.width / 2),
       cy: Math.round(r.y + r.height / 2),
@@ -6999,23 +7437,39 @@ const onImageMouseDown = (e) => {
     deselectDrawing()
     return
   }
+  onDrawingSurfaceMouseDown(e)
+}
+
+const onDrawingSurfaceMouseDown = (e) => {
+  if (!drawingTool.value) {
+    return
+  }
   if (showCrop.value || (showBlurRegion.value && blurShapeMode.value === 'rectangle') || (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle')) {
     return
   }
   e.preventDefault()
-  const pos = clientToImgLocal(e)
+  deselectZoomCallout()
+  const pos = drawingPointerForEvent(e).draft
   const t = drawingTool.value
   if (t === 'pixel') {
-    const p = displayPointToNatural(pos.x, pos.y)
-    drawings.value.push({ type: 'pixel', x: p.x, y: p.y, color: drawStrokeColor.value })
-    void bakeDrawingsIntoPreview()
+    const p = draftPointToStored(pos)
+    pushActiveDrawing({ type: 'pixel', x: p.x, y: p.y, color: drawStrokeColor.value })
+    if (!usesLayoutDrawingSpace.value) {
+      void bakeDrawingsIntoPreview()
+    } else {
+      finishVectorDrawingEdit()
+    }
     return
   }
   if (t === 'fill') {
-    const p = displayPointToNatural(pos.x, pos.y)
+    const p = draftPointToStored(pos)
     const col = drawFillEnabled.value && drawFillColor.value ? drawFillColor.value : drawStrokeColor.value
-    drawings.value.push({ type: 'fill', x: p.x, y: p.y, color: col })
-    void bakeDrawingsIntoPreview()
+    pushActiveDrawing({ type: 'fill', x: p.x, y: p.y, color: col })
+    if (!usesLayoutDrawingSpace.value) {
+      void bakeDrawingsIntoPreview()
+    } else {
+      finishVectorDrawingEdit()
+    }
     return
   }
   if (t === 'pen') {
@@ -7050,6 +7504,28 @@ const onImageMouseDown = (e) => {
     window.addEventListener('touchmove', onWindowDrawMove, { passive: false })
     window.addEventListener('touchend', onWindowDrawEnd)
   }
+}
+
+const onDrawingSurfaceClick = (e) => {
+  if (usesLayoutDrawingSpace.value) {
+    return
+  }
+  onImageClickUnified(e)
+}
+
+const onDrawingSurfaceTouchStart = (e) => {
+  if (usesLayoutDrawingSpace.value) {
+    if (!drawingTool.value) {
+      return
+    }
+    if (showCrop.value || (showBlurRegion.value && blurShapeMode.value === 'rectangle') || (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle')) {
+      return
+    }
+    e.preventDefault()
+    onDrawingSurfaceMouseDown(e)
+    return
+  }
+  onImageTouchStartUnified(e)
 }
 
 const buildEditPayload = (options = {}) => {
@@ -7110,7 +7586,11 @@ const buildEditPayload = (options = {}) => {
       description: photoCaptionApplied.value?.description || ''
     }
     payload.zoom_layout = buildZoomLayoutPayload()
+    payload.layout_drawings = layoutDrawings.value
     payload.save_mode = saveMode.value
+    if (props.galleryFoldersEnabled && saveMode.value === 'copy') {
+      payload.save_copy_folder_id = saveCopyFolderId.value || 'entrada'
+    }
     payload.output_format = saveFormat.value
     payload.output_quality = saveQuality.value
   }
@@ -7137,6 +7617,7 @@ const applyChanges = async (options = {}) => {
       currentImageUrl.value = response.data.image_data
       if (options.bakeDrawings) {
         drawings.value = []
+        layoutDrawings.value = []
         selectedDrawingIndex.value = null
       }
       if (showCrop.value) {
@@ -7231,6 +7712,7 @@ const syncStateAfterSave = (url) => {
   committedPixelateMask.value = null
   pixelateApplyGlobal.value = false
   drawings.value = []
+  layoutDrawings.value = []
   drawingTool.value = null
   penDraftPoints.value = []
   pathDraftPoints.value = []
@@ -7294,6 +7776,7 @@ const resetFilters = () => {
   resetViewTransform()
   viewPanHandMode.value = false
   saveMode.value = props.showUseInForm ? 'copy' : 'overwrite'
+  saveCopyFolderId.value = props.photo?.folder_id || 'entrada'
   saveFormat.value = 'jpeg'
   saveQuality.value = 85
   editHistoryReady.value = false
@@ -7382,7 +7865,10 @@ const saveImage = async (options = {}) => {
             saved = {
               filename: response.data.image_url,
               url: response.data.url,
-              saveMode: response.data.save_mode || saveMode.value
+              saveMode: response.data.save_mode || saveMode.value,
+              saveCopyFolderId:
+                response.data.save_copy_folder_id ??
+                (saveMode.value === 'copy' ? saveCopyFolderId.value : null)
             }
             emit('save', {
               ...saved,
@@ -7426,6 +7912,7 @@ const hasChanges = computed(() => {
          pixelateMaskDirty.value ||
          texts.value.length > 0 ||
          drawings.value.length > 0 ||
+         layoutDrawings.value.length > 0 ||
          imageOverlays.value.length > 0 ||
          photoCaptionApplied.value !== null ||
          watermarkApplied.value ||
@@ -7445,8 +7932,7 @@ const positionText = (e) => {
   }
   if (showCrop.value || showBlurRegion.value || showPixelateRegion.value) return
   if (activeControl.value !== 'text') return
-  
-  // Verificar se há texto para adicionar
+
   if (!textContent.value.trim()) return
   
   const pos = clientToImgLocal(e)

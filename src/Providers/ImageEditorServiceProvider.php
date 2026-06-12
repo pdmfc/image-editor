@@ -12,6 +12,7 @@ use PDMFC\ImageEditor\Services\QrCodeService;
 use PDMFC\ImageEditor\Services\UserPhotoStorage;
 use PDMFC\ImageEditor\Support\ActionButtons;
 use PDMFC\ImageEditor\Support\CallbackRoute;
+use PDMFC\ImageEditor\Support\GalleryFolders;
 
 class ImageEditorServiceProvider extends ServiceProvider
 {
@@ -23,6 +24,7 @@ class ImageEditorServiceProvider extends ServiceProvider
         $this->normalizeActionButtonsConfig();
 
         $this->app->singleton(UserPhotoStorage::class);
+        $this->app->singleton(GalleryFolders::class);
         $this->app->singleton(CameraService::class);
         $this->app->singleton(QrCodeService::class);
         $this->app->singleton(ImageService::class);
@@ -92,6 +94,7 @@ class ImageEditorServiceProvider extends ServiceProvider
         Inertia::share([
             'imageEditor' => fn (): array => [
                 'actionButtons' => config('image-editor.action_buttons', []),
+                'galleryFoldersEnabled' => (bool) config('image-editor.gallery.folders_enabled', false),
             ],
         ]);
     }

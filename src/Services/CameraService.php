@@ -4,6 +4,7 @@ namespace PDMFC\ImageEditor\Services;
 
 use Illuminate\Support\Facades\Storage;
 use PDMFC\ImageEditor\Events\PhotosUploadedFromMobile;
+use PDMFC\ImageEditor\Support\GalleryFolders;
 use Intervention\Image\Encoders\JpegEncoder;
 use Intervention\Image\Laravel\Facades\Image;
 
@@ -11,6 +12,7 @@ class CameraService
 {
     public function __construct(
         protected UserPhotoStorage $storage,
+        protected GalleryFolders $galleryFolders,
     ) {
     }
 
@@ -28,9 +30,25 @@ class CameraService
                 return $result;
             }
 
-            return [
-                'photos' => $this->sortPhotosByGalleryOrder($result['photos'] ?? [], $userId),
-            ];
+            $photos = $result['photos'] ?? [];
+
+            if ($this->galleryFolders->enabled()) {
+                $this->galleryFolders->syncFolderOrdersForKnownPhotos(
+                    $userId,
+                    array_column($photos, 'filename')
+                );
+                $photos = $this->galleryFolders->sortPhotos($userId, $photos);
+                $payload = [
+                    'photos' => $photos,
+                    'gallery_folders_enabled' => true,
+                    'folders' => $this->galleryFolders->listFolders($userId),
+                ];
+            } else {
+                $photos = $this->sortPhotosByGalleryOrder($photos, $userId);
+                $payload = ['photos' => $photos];
+            }
+
+            return $payload;
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
         }
@@ -55,13 +73,31 @@ class CameraService
                 $fullPath = $this->storage->storagePath($userId, $filename);
                 $timestamp = is_file($fullPath) ? filemtime($fullPath) : time();
 
-                $photos[] = [
+                $entry = [
                     'filename' => $filename,
                     'url' => $this->storage->photoUrl($userId, $filename),
                     'path' => $file,
                     'timestamp' => $timestamp,
                     'is_blank_canvas' => str_starts_with($filename, 'canvas_'),
                 ];
+
+                if ($this->galleryFolders->enabled()) {
+                    $entry['folder_id'] = $this->galleryFolders->folderIdForPhoto($userId, $filename);
+                }
+
+                $photos[] = $entry;
+            }
+
+            if ($this->galleryFolders->enabled()) {
+                $this->galleryFolders->syncAssignmentsForKnownPhotos(
+                    $userId,
+                    array_column($photos, 'filename')
+                );
+
+                foreach ($photos as &$photo) {
+                    $photo['folder_id'] = $this->galleryFolders->folderIdForPhoto($userId, $photo['filename']);
+                }
+                unset($photo);
             }
 
             return ['photos' => $photos];
@@ -73,13 +109,13 @@ class CameraService
     /**
      * @throws \JsonException
      */
-    private function trackNewPhotoInGalleryOrder(string|int $userId, string $filename): void
+    private function trackNewPhotoInGalleryOrder(string|int $userId, string $filename, ?string $folderId = null): void
     {
-        if ($this->storage->readGalleryOrder($userId) === []) {
-            return;
+        if ($this->storage->readGalleryOrder($userId) !== []) {
+            $this->storage->appendToGalleryOrder($userId, $filename);
         }
 
-        $this->storage->appendToGalleryOrder($userId, $filename);
+        $this->galleryFolders->assignNewPhoto($userId, $filename, $folderId);
     }
 
     public function storeCallbackFiles(string|int $userId, array $payload): array
@@ -154,7 +190,7 @@ class CameraService
         }
     }
 
-    public function uploadPhoto($file, string|int $userId): array
+    public function uploadPhoto($file, string|int $userId, ?string $folderId = null): array
     {
         try {
             if (! $file || ! $file->isValid()) {
@@ -184,17 +220,23 @@ class CameraService
                 return ['error' => 'Falha ao guardar a imagem'];
             }
 
-            $this->trackNewPhotoInGalleryOrder($userId, $filename);
+            $this->trackNewPhotoInGalleryOrder($userId, $filename, $folderId);
             $fullPath = Storage::disk($this->disk())->path($stored);
+
+            $photo = [
+                'filename' => $filename,
+                'url' => $this->storage->photoUrl($userId, $filename),
+                'path' => $stored,
+                'timestamp' => is_file($fullPath) ? filemtime($fullPath) : time(),
+            ];
+
+            if ($this->galleryFolders->enabled()) {
+                $photo['folder_id'] = $this->galleryFolders->folderIdForPhoto($userId, $filename);
+            }
 
             return [
                 'success' => true,
-                'photo' => [
-                    'filename' => $filename,
-                    'url' => $this->storage->photoUrl($userId, $filename),
-                    'path' => $stored,
-                    'timestamp' => is_file($fullPath) ? filemtime($fullPath) : time(),
-                ],
+                'photo' => $photo,
             ];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
@@ -205,7 +247,8 @@ class CameraService
         int $width = 1600,
         int $height = 1200,
         string $background = '#ffffff',
-        string|int $userId = 0
+        string|int $userId = 0,
+        ?string $folderId = null
     ): array {
         try {
             $width = max(400, min(8000, $width));
@@ -223,20 +266,26 @@ class CameraService
                 return ['error' => 'Falha ao criar a folha em branco'];
             }
 
-            $this->trackNewPhotoInGalleryOrder($userId, $filename);
+            $this->trackNewPhotoInGalleryOrder($userId, $filename, $folderId);
             $fullPath = Storage::disk($this->disk())->path($path);
+
+            $photo = [
+                'filename' => $filename,
+                'url' => $this->storage->photoUrl($userId, $filename),
+                'path' => $path,
+                'timestamp' => is_file($fullPath) ? filemtime($fullPath) : time(),
+                'is_blank_canvas' => true,
+            ];
+
+            if ($this->galleryFolders->enabled()) {
+                $photo['folder_id'] = $this->galleryFolders->folderIdForPhoto($userId, $filename);
+            }
 
             return [
                 'success' => true,
                 'filename' => $filename,
                 'url' => $this->storage->photoUrl($userId, $filename),
-                'photo' => [
-                    'filename' => $filename,
-                    'url' => $this->storage->photoUrl($userId, $filename),
-                    'path' => $path,
-                    'timestamp' => is_file($fullPath) ? filemtime($fullPath) : time(),
-                    'is_blank_canvas' => true,
-                ],
+                'photo' => $photo,
             ];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
@@ -266,16 +315,23 @@ class CameraService
             }
 
             $this->trackNewPhotoInGalleryOrder($userId, $newFilename);
+            $this->galleryFolders->assignDuplicateFromSource($userId, $safeName, $newFilename);
             $fullPath = Storage::disk($this->disk())->path($newPath);
+
+            $photo = [
+                'filename' => $newFilename,
+                'url' => $this->storage->photoUrl($userId, $newFilename),
+                'path' => $newPath,
+                'timestamp' => is_file($fullPath) ? filemtime($fullPath) : time(),
+            ];
+
+            if ($this->galleryFolders->enabled()) {
+                $photo['folder_id'] = $this->galleryFolders->folderIdForPhoto($userId, $newFilename);
+            }
 
             return [
                 'success' => true,
-                'photo' => [
-                    'filename' => $newFilename,
-                    'url' => $this->storage->photoUrl($userId, $newFilename),
-                    'path' => $newPath,
-                    'timestamp' => is_file($fullPath) ? filemtime($fullPath) : time(),
-                ],
+                'photo' => $photo,
             ];
         } catch (\Exception $e) {
             return ['error' => $e->getMessage()];
@@ -293,6 +349,7 @@ class CameraService
 
             if (Storage::disk($this->disk())->delete($filepath)) {
                 $this->storage->removeFromGalleryOrder($userId, $filename);
+                $this->galleryFolders->removePhoto($userId, $filename);
 
                 return ['success' => true];
             }
@@ -380,7 +437,7 @@ class CameraService
     /**
      * @param  list<string>  $filenames
      */
-    public function reorderPhotos(string|int $userId, array $filenames): array
+    public function reorderPhotos(string|int $userId, array $filenames, ?string $folderId = null): array
     {
         try {
             $filenames = array_values(array_unique(array_filter(array_map(
@@ -390,6 +447,28 @@ class CameraService
 
             if ($filenames === []) {
                 return ['error' => 'Nenhum ficheiro indicado para ordenar.'];
+            }
+
+            if ($this->galleryFolders->enabled()) {
+                if ($folderId === null || $folderId === '') {
+                    return ['error' => 'Indique a pasta para ordenar.'];
+                }
+
+                $this->galleryFolders->reorderPhotosInFolder($userId, $folderId, $filenames);
+
+                $existing = $this->listPhotosUnsorted($userId);
+
+                if (isset($existing['error'])) {
+                    return ['error' => $existing['error']];
+                }
+
+                $photos = $this->galleryFolders->sortPhotos($userId, $existing['photos'] ?? []);
+
+                return [
+                    'success' => true,
+                    'photos' => $photos,
+                    'folders' => $this->galleryFolders->listFolders($userId),
+                ];
             }
 
             $existing = $this->listPhotosUnsorted($userId);
@@ -455,5 +534,70 @@ class CameraService
         }
 
         return [];
+    }
+
+    public function createGalleryFolder(string|int $userId, string $name): array
+    {
+        try {
+            $folder = $this->galleryFolders->createFolder($userId, $name);
+
+            return [
+                'success' => true,
+                'folder' => $folder,
+                'folders' => $this->galleryFolders->listFolders($userId),
+            ];
+        } catch (\InvalidArgumentException $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    public function renameGalleryFolder(string|int $userId, string $folderId, string $name): array
+    {
+        try {
+            $this->galleryFolders->renameFolder($userId, $folderId, $name);
+
+            return [
+                'success' => true,
+                'folders' => $this->galleryFolders->listFolders($userId),
+            ];
+        } catch (\InvalidArgumentException $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    public function deleteGalleryFolder(string|int $userId, string $folderId): array
+    {
+        try {
+            $this->galleryFolders->deleteFolder($userId, $folderId);
+
+            return [
+                'success' => true,
+                'folders' => $this->galleryFolders->listFolders($userId),
+            ];
+        } catch (\InvalidArgumentException $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * @param  list<string>  $filenames
+     */
+    public function movePhotosToFolder(string|int $userId, array $filenames, string $folderId): array
+    {
+        try {
+            $this->galleryFolders->movePhotos($userId, $filenames, $folderId);
+
+            return $this->getPhotos($userId);
+        } catch (\InvalidArgumentException $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
     }
 }

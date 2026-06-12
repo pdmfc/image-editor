@@ -16,6 +16,10 @@ Route::middleware(config('image-editor.routes.browser_middleware', ['web']))->gr
     Route::delete('/camera/photos', [CameraController::class, 'deletePhoto']);
     Route::post('/camera/photos/duplicate', [CameraController::class, 'duplicatePhoto']);
     Route::post('/camera/photos/reorder', [CameraController::class, 'reorderPhotos']);
+    Route::post('/camera/photos/move', [CameraController::class, 'movePhotosToFolder']);
+    Route::post('/camera/folders', [CameraController::class, 'createGalleryFolder']);
+    Route::patch('/camera/folders/{folderId}', [CameraController::class, 'renameGalleryFolder']);
+    Route::delete('/camera/folders/{folderId}', [CameraController::class, 'deleteGalleryFolder']);
     Route::post('/image/edit', [ImageController::class, 'edit'])->name('image-editor.edit');
     Route::post('/image/preview', [ImageController::class, 'preview'])->name('image-editor.preview');
 });

@@ -52,7 +52,3 @@ const isDataUrl = computed(() =>
 
 defineEmits(['close'])
 </script>
-
-<style scoped>
-
-</style>

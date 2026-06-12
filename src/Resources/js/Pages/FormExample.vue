@@ -11,7 +11,6 @@ defineProps({
 })
 
 const formTitle = ref('Relatório de inspeção')
-const formNotes = ref('')
 const formImageFilename = ref('')
 const formImageUrl = ref('')
 const formImagePreviewKey = ref(0)

@@ -556,6 +556,9 @@ Configure no `.env` do host quais botões aparecem na galeria:
 ```env
 # ou IMAGE_EDITOR_ACTION_BUTTONS=...
 ACTION_BUTTONS=upload,qrcode,camera,canvas
+
+# Pastas virtuais na galeria (false = lista plana, comportamento por defeito)
+IMAGE_EDITOR_GALLERY_FOLDERS=false
 ```
 
 Valores aceites (separados por vírgula):

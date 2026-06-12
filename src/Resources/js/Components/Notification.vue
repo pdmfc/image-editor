@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 
 const props = defineProps({
     show: {
@@ -100,7 +100,7 @@ const props = defineProps({
     },
     duration: {
         type: Number,
-        default: 3000 // 3 segundos por padrão
+        default: 3000
     },
     confirmLabel: {
         type: String,
