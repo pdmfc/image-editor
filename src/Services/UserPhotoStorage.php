@@ -14,13 +14,7 @@ class UserPhotoStorage
 
     public function sanitizeUserId(string|int $userId): string
     {
-        $id = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $userId);
-
-        if ($id === '') {
-            throw new \InvalidArgumentException('user_id inválido.');
-        }
-
-        return $id;
+        return CallbackRoute::sanitizeUserId($userId);
     }
 
     public function directory(string|int $userId): string

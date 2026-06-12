@@ -1,4 +1,5 @@
 import { computed, ref, unref } from 'vue'
+import { isInertiaDocument } from './isInertiaDocument.js'
 
 const DEFAULT_ACTION_BUTTONS = ['upload', 'qrcode', 'camera', 'canvas']
 
@@ -33,20 +34,6 @@ function getInertiaActionButtons(inertiaModule) {
   } catch {
     return null
   }
-}
-
-function isInertiaDocument() {
-  if (typeof globalThis !== 'undefined' && globalThis.Nova) {
-    return false
-  }
-
-  if (typeof document === 'undefined') {
-    return false
-  }
-
-  const app = document.getElementById('app')
-
-  return Boolean(app?.hasAttribute('data-page'))
 }
 
 function resolveActionButtonsList(explicit, inertiaModule) {

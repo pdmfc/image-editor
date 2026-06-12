@@ -721,7 +721,6 @@
 
 <script setup>
 import { ref, computed, onMounted, toRef, nextTick } from 'vue'
-import { usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Notification from '../Components/Notification.vue'
 import EditorTooltipLayer from '../Components/EditorTooltipLayer.vue'
@@ -763,23 +762,9 @@ const enabledActionButtons = useImageEditorActionButtons(
   toRef(props, 'actionButtons')
 )
 
-const inertiaPage = usePage()
-const galleryFoldersFromNova = useImageEditorGalleryFolders(
+const galleryFoldersEnabled = useImageEditorGalleryFolders(
   toRef(props, 'galleryFoldersEnabled')
 )
-
-const galleryFoldersEnabled = computed(() => {
-  if (typeof props.galleryFoldersEnabled === 'boolean') {
-    return props.galleryFoldersEnabled
-  }
-
-  const fromInertia = inertiaPage.props?.imageEditor?.galleryFoldersEnabled
-  if (typeof fromInertia === 'boolean') {
-    return fromInertia
-  }
-
-  return galleryFoldersFromNova.value
-})
 
 const isActionEnabled = (action) => enabledActionButtons.value.has(action)
 

@@ -1,4 +1,5 @@
 import { computed, ref, unref } from 'vue'
+import { isInertiaDocument } from './isInertiaDocument.js'
 
 function getNovaGalleryFoldersEnabled() {
   const Nova = typeof globalThis !== 'undefined' ? globalThis.Nova : null
@@ -24,20 +25,6 @@ function getInertiaGalleryFoldersEnabled(inertiaModule) {
   } catch {
     return null
   }
-}
-
-function isInertiaDocument() {
-  if (typeof globalThis !== 'undefined' && globalThis.Nova) {
-    return false
-  }
-
-  if (typeof document === 'undefined') {
-    return false
-  }
-
-  const app = document.getElementById('app')
-
-  return Boolean(app?.hasAttribute('data-page'))
 }
 
 function readGalleryFoldersFromDataPage() {
