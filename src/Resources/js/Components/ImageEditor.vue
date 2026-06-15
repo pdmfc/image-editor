@@ -269,6 +269,7 @@
         ]"
         @wheel.prevent="onViewportWheel"
         @mousedown="onViewportMouseDown"
+        @pointermove="onEditorViewportPointerMove"
         @touchstart="onViewportTouchStart"
         @touchmove="onViewportTouchMove"
         @touchend="onViewportTouchEnd"
@@ -278,324 +279,14 @@
           class="relative h-full w-full will-change-transform"
           :style="stageTransformStyle"
         >
-        <!-- Composição detalhe ampliado (fundo branco + foto reduzida + recortes) -->
         <div
-          v-if="zoomLayout"
-          class="absolute inset-0 z-[12] flex items-center justify-center"
-        >
-          <div
-            ref="layoutBoardRef"
-            class="relative bg-white shadow-2xl"
-            :style="layoutBoardContainerStyle"
-          >
-            <img
-              :src="currentImageUrl"
-              alt="Imagem principal"
-              ref="imageRef"
-              class="zoom-layout-base-img absolute block h-full w-full select-none"
-              :style="layoutBaseImgStyle"
-              draggable="false"
-              @load="onImageLoad"
-            />
-            <div
-              v-if="zoomDetailSelecting && zoomSelectBoardStyle"
-              class="pointer-events-none absolute z-[20] border-2 border-dashed border-violet-400 bg-violet-500/20"
-              :style="zoomSelectBoardStyle"
-            />
-            <div
-              v-for="(callout, calloutIndex) in zoomCallouts"
-              :key="callout.id"
-              class="absolute z-[25] overflow-visible shadow-lg transition-shadow"
-              :class="
-                canEditZoomCallouts && callout.id === selectedZoomCalloutId
-                  ? 'ring-4 ring-violet-300'
-                  : canEditZoomCallouts
-                    ? 'ring-2 ring-violet-500'
-                    : ''
-              "
-              :style="zoomCalloutBoxStyle(callout)"
-              @click.stop="canEditZoomCallouts && selectZoomCallout(callout.id)"
-            >
-              <div class="absolute inset-0 overflow-hidden rounded-sm">
-                <img
-                  :src="callout.src"
-                  alt=""
-                  class="zoom-callout-img pointer-events-none absolute inset-0 block h-full w-full"
-                  draggable="false"
-                />
-              </div>
-              <div
-                v-if="canEditZoomCallouts && !zoomDetailSelecting"
-                class="absolute inset-0 z-0 cursor-move touch-none"
-                title="Arrastar detalhe"
-                @mousedown.stop.prevent="startZoomCalloutMove($event, callout.id)"
-                @touchstart.prevent="startZoomCalloutMove($event, callout.id)"
-              />
-              <div
-                v-if="canEditZoomCallouts && !zoomDetailSelecting"
-                class="absolute -bottom-1 -right-1 z-10 h-3 w-3 cursor-se-resize rounded-sm border border-violet-200 bg-violet-600/90"
-                title="Redimensionar detalhe"
-                @mousedown.stop.prevent="startZoomCalloutResize($event, callout.id)"
-                @touchstart.stop.prevent="startZoomCalloutResize($event, callout.id)"
-              />
-              <button
-                v-if="canEditZoomCallouts"
-                type="button"
-                title="Remover detalhe"
-                class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white shadow"
-                @click.stop="removeZoomCallout(callout.id)"
-              >×</button>
-            </div>
-            <svg
-              v-if="showLayoutDrawingsOverlay"
-              class="pointer-events-none absolute inset-0 z-[26] h-full w-full overflow-visible"
-              preserveAspectRatio="none"
-              :viewBox="layoutDrawingSvgViewBox"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <template v-for="(shape, idx) in layoutDrawingOverlayShapes" :key="'layout-draw-' + idx">
-                <line
-                  v-if="shape.kind === 'line'"
-                  :x1="shape.x1"
-                  :y1="shape.y1"
-                  :x2="shape.x2"
-                  :y2="shape.y2"
-                  :stroke="shape.stroke"
-                  :stroke-width="shape.strokeWidth"
-                  stroke-linecap="round"
-                  vector-effect="non-scaling-stroke"
-                />
-                <g v-else-if="shape.kind === 'arrow'">
-                  <line
-                    :x1="shape.x1"
-                    :y1="shape.y1"
-                    :x2="shape.shaftX"
-                    :y2="shape.shaftY"
-                    :stroke="shape.stroke"
-                    :stroke-width="shape.strokeWidth"
-                    stroke-linecap="round"
-                    vector-effect="non-scaling-stroke"
-                  />
-                  <polygon :points="shape.headPoints" :fill="shape.stroke" stroke="none" />
-                </g>
-                <rect
-                  v-else-if="shape.kind === 'rectangle'"
-                  :x="shape.x"
-                  :y="shape.y"
-                  :width="shape.width"
-                  :height="shape.height"
-                  :stroke="shape.stroke"
-                  :stroke-width="shape.strokeWidth"
-                  :fill="shape.fill"
-                  :fill-opacity="shape.fillOpacity"
-                  vector-effect="non-scaling-stroke"
-                />
-                <ellipse
-                  v-else-if="shape.kind === 'ellipse'"
-                  :cx="shape.cx"
-                  :cy="shape.cy"
-                  :rx="shape.rx"
-                  :ry="shape.ry"
-                  :stroke="shape.stroke"
-                  :stroke-width="shape.strokeWidth"
-                  :fill="shape.fill"
-                  :fill-opacity="shape.fillOpacity"
-                  vector-effect="non-scaling-stroke"
-                />
-                <circle
-                  v-else-if="shape.kind === 'circle'"
-                  :cx="shape.cx"
-                  :cy="shape.cy"
-                  :r="shape.r"
-                  :stroke="shape.stroke"
-                  :stroke-width="shape.strokeWidth"
-                  :fill="shape.fill"
-                  :fill-opacity="shape.fillOpacity"
-                  vector-effect="non-scaling-stroke"
-                />
-                <polyline
-                  v-else-if="shape.kind === 'pen'"
-                  :points="shape.points"
-                  :stroke="shape.stroke"
-                  :stroke-width="shape.strokeWidth"
-                  fill="none"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  vector-effect="non-scaling-stroke"
-                />
-                <polyline
-                  v-else-if="shape.kind === 'polygon'"
-                  :points="shape.points"
-                  :stroke="shape.stroke"
-                  :stroke-width="shape.strokeWidth"
-                  fill="none"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  vector-effect="non-scaling-stroke"
-                />
-                <path
-                  v-else-if="shape.kind === 'bezier'"
-                  :d="shape.d"
-                  :stroke="shape.stroke"
-                  :stroke-width="shape.strokeWidth"
-                  fill="none"
-                  stroke-linecap="round"
-                  vector-effect="non-scaling-stroke"
-                />
-                <circle
-                  v-else-if="shape.kind === 'pixel'"
-                  :cx="shape.cx"
-                  :cy="shape.cy"
-                  r="2"
-                  :fill="shape.stroke"
-                />
-              </template>
-            </svg>
-            <svg
-              v-if="showLayoutDrawingLiveOverlay"
-              class="pointer-events-none absolute inset-0 z-[27] h-full w-full overflow-visible"
-              preserveAspectRatio="none"
-              :viewBox="layoutDrawingSvgViewBox"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <g
-                v-if="drawingRubberBand"
-                :stroke="drawStrokeColor"
-                :stroke-width="Math.max(1, drawStrokeWidth)"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                fill="none"
-                vector-effect="non-scaling-stroke"
-              >
-                <line
-                  v-if="drawingRubberBand.tool === 'line'"
-                  :x1="drawingRubberBand.x0"
-                  :y1="drawingRubberBand.y0"
-                  :x2="drawingRubberBand.x1"
-                  :y2="drawingRubberBand.y1"
-                />
-                <g v-else-if="drawingRubberBand.tool === 'arrow'">
-                  <line
-                    :x1="drawingRubberBand.x0"
-                    :y1="drawingRubberBand.y0"
-                    :x2="drawingRubberBand.shaftX"
-                    :y2="drawingRubberBand.shaftY"
-                  />
-                  <polygon
-                    :points="drawingRubberBand.headPoints"
-                    :fill="drawStrokeColor"
-                    stroke="none"
-                  />
-                </g>
-                <rect
-                  v-else-if="drawingRubberBand.tool === 'rectangle'"
-                  :x="drawingRubberBand.left"
-                  :y="drawingRubberBand.top"
-                  :width="drawingRubberBand.w"
-                  :height="drawingRubberBand.h"
-                  :fill="drawingPreviewFill"
-                  :fill-opacity="drawingPreviewFillOpacity"
-                  :stroke="drawStrokeColor"
-                />
-                <ellipse
-                  v-else-if="drawingRubberBand.tool === 'ellipse'"
-                  :cx="drawingRubberBand.cx"
-                  :cy="drawingRubberBand.cy"
-                  :rx="drawingRubberBand.rx"
-                  :ry="drawingRubberBand.ry"
-                  :fill="drawingPreviewFill"
-                  :fill-opacity="drawingPreviewFillOpacity"
-                  :stroke="drawStrokeColor"
-                />
-                <circle
-                  v-else-if="drawingRubberBand.tool === 'circle'"
-                  :cx="drawingRubberBand.cx"
-                  :cy="drawingRubberBand.cy"
-                  :r="drawingRubberBand.r"
-                  :fill="drawingPreviewFill"
-                  :fill-opacity="drawingPreviewFillOpacity"
-                  :stroke="drawStrokeColor"
-                />
-              </g>
-              <g
-                v-else-if="drawingTool === 'pen' && penDraftPoints.length > 1"
-                :stroke="drawStrokeColor"
-                :stroke-width="Math.max(1, drawStrokeWidth)"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                fill="none"
-                vector-effect="non-scaling-stroke"
-              >
-                <polyline :points="penDraftPointsAttr" />
-              </g>
-              <g
-                v-else-if="drawingTool === 'polygon' && pathDraftPoints.length > 0"
-                :stroke="drawStrokeColor"
-                :stroke-width="Math.max(1, drawStrokeWidth)"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                fill="none"
-                vector-effect="non-scaling-stroke"
-              >
-                <polyline :points="polygonDraftPointsAttr" />
-                <line
-                  v-if="pathDraftHoverPos"
-                  :x1="pathDraftPoints[pathDraftPoints.length - 1].x"
-                  :y1="pathDraftPoints[pathDraftPoints.length - 1].y"
-                  :x2="pathDraftHoverPos.x"
-                  :y2="pathDraftHoverPos.y"
-                  stroke-dasharray="6 5"
-                  class="opacity-90"
-                />
-              </g>
-              <g
-                v-else-if="drawingTool === 'bezier' && pathDraftPoints.length > 0"
-                :stroke="drawStrokeColor"
-                :stroke-width="Math.max(1, drawStrokeWidth)"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                fill="none"
-                vector-effect="non-scaling-stroke"
-              >
-                <template v-if="pathDraftPoints.length < 3">
-                  <polyline :points="polygonDraftPointsAttr" />
-                  <line
-                    v-if="pathDraftHoverPos"
-                    :x1="pathDraftPoints[pathDraftPoints.length - 1].x"
-                    :y1="pathDraftPoints[pathDraftPoints.length - 1].y"
-                    :x2="pathDraftHoverPos.x"
-                    :y2="pathDraftHoverPos.y"
-                    stroke-dasharray="6 5"
-                    class="opacity-85"
-                  />
-                </template>
-                <path v-else-if="bezierDraftPathD" :d="bezierDraftPathD" />
-              </g>
-            </svg>
-            <div
-              v-if="isDrawingCaptureActive && zoomLayout"
-              class="absolute inset-0 z-[30] touch-none cursor-crosshair"
-              @mousedown="onDrawingSurfaceMouseDown"
-              @click.stop="onDrawingSurfaceClick"
-              @touchstart="onDrawingSurfaceTouchStart"
-              @mousemove="onDrawingSurfaceMoveDrawingDraft"
-              @mouseleave="onDrawingSurfaceLeaveDrawingDraft"
-              @touchmove="onDrawingSurfaceMoveDrawingDraft"
-            />
-            <div
-              v-if="zoomDetailSelecting"
-              class="absolute z-[18] cursor-crosshair touch-none"
-              :style="layoutBaseImgStyle"
-              title="Arraste na foto para escolher a zona a ampliar"
-              @mousedown.prevent="startZoomSelectOnLayout"
-              @touchstart.prevent="startZoomSelectOnLayout"
-            />
-          </div>
-        </div>
-        <div
-          v-else
           class="relative h-full w-full"
           @mousedown.self="deselectDrawing"
+        >
+        <div
+          ref="compositionLayerRef"
+          class="relative h-full w-full"
+          :style="compositionGeometryLayerStyle"
         >
         <img
           :src="displayImageUrl"
@@ -607,16 +298,16 @@
           @click="onImageClickUnified"
           @touchstart="onImageTouchStartUnified"
           class="editor-view-img h-full w-full"
-          :class="[imageCursorClass, { 'cursor-crosshair': zoomDetailMode && zoomDetailSelecting }]"
-          :style="maskBrushCursorStyle"
+          :class="[imageCursorClass, { 'cursor-crosshair': areaStampMode === 'copy' || areaStampMode === 'paste' }]"
+          :style="isMaskBrushModeActive ? { cursor: 'none' } : maskBrushCursorStyle"
           @mousemove="onDrawingSurfaceMoveDrawingDraft"
           @mouseleave="onDrawingSurfaceLeaveDrawingDraft"
           @touchmove="onDrawingSurfaceMoveDrawingDraft"
         />
         <div
-          v-if="zoomDetailMode && zoomDetailSelecting && zoomSelectImgStyle"
-          class="pointer-events-none absolute z-[20] border-2 border-dashed border-violet-400 bg-violet-500/20"
-          :style="zoomSelectImgStyle"
+          v-if="areaStampMode === 'copy' && areaSelectImgStyle"
+          class="pointer-events-none absolute z-[40] border-2 border-dashed border-teal-400 bg-teal-500/30 shadow-sm"
+          :style="areaSelectImgStyle"
         />
         <div v-if="showCrop && !showingOriginal" class="pointer-events-none absolute inset-0 z-[30]">
           <div
@@ -912,22 +603,61 @@
 
         <!-- Textos Adicionados (coords naturais → object-fit: contain) -->
         <div
-          v-for="(text, index) in texts"
-          :key="'text-' + index"
-          class="absolute z-20"
-          :style="textItemOuterStyle(text)"
+          v-for="(text, index) in textsForRender"
+          :key="text.id || 'text-' + index"
+          class="absolute"
+          :style="textLayerStyle(text)"
         >
           <div
             class="relative cursor-move select-none touch-none"
             :class="selectedTextIndex === index ? 'ring-2 ring-sky-400 ring-offset-1 ring-offset-transparent rounded px-1 py-0.5' : ''"
-            title="Clique para editar; arraste para mover"
+            title="Clique para editar; arraste para mover; botão direito para ordem das camadas"
             @click.stop="selectText(index)"
             @mousedown.stop="startMovingText($event, index)"
             @touchstart.stop="startMovingText($event, index)"
+            @contextmenu.prevent.stop="onTextContextMenu($event, text.id)"
           >
-            <div :style="textItemInnerStyle(text)" class="whitespace-pre-wrap break-words max-w-[min(90vw,24rem)]">
+            <div :style="textItemInnerStyle(text)">
               {{ text.content }}
             </div>
+            <template v-if="selectedTextIndex === index && !showingOriginal">
+              <div
+                class="absolute -left-1 -top-1 z-10 h-2.5 w-2.5 cursor-nw-resize rounded-sm border border-sky-200 bg-sky-600/90 touch-none"
+                title="Redimensionar"
+                @mousedown.stop.prevent="startTextResize($event, index, 'nw')"
+                @touchstart.stop.prevent="startTextResize($event, index, 'nw')"
+              />
+              <div
+                class="absolute -right-1 -top-1 z-10 h-2.5 w-2.5 cursor-ne-resize rounded-sm border border-sky-200 bg-sky-600/90 touch-none"
+                title="Redimensionar"
+                @mousedown.stop.prevent="startTextResize($event, index, 'ne')"
+                @touchstart.stop.prevent="startTextResize($event, index, 'ne')"
+              />
+              <div
+                class="absolute -left-1 -bottom-1 z-10 h-2.5 w-2.5 cursor-sw-resize rounded-sm border border-sky-200 bg-sky-600/90 touch-none"
+                title="Redimensionar"
+                @mousedown.stop.prevent="startTextResize($event, index, 'sw')"
+                @touchstart.stop.prevent="startTextResize($event, index, 'sw')"
+              />
+              <div
+                class="absolute -right-1 -bottom-1 z-10 h-2.5 w-2.5 cursor-se-resize rounded-sm border border-sky-200 bg-sky-600/90 touch-none"
+                title="Redimensionar"
+                @mousedown.stop.prevent="startTextResize($event, index, 'se')"
+                @touchstart.stop.prevent="startTextResize($event, index, 'se')"
+              />
+              <div
+                class="absolute -right-1 top-1/2 z-10 h-2.5 w-2.5 -translate-y-1/2 cursor-e-resize rounded-sm border border-sky-200 bg-sky-600/90 touch-none"
+                title="Ajustar largura"
+                @mousedown.stop.prevent="startTextResize($event, index, 'e')"
+                @touchstart.stop.prevent="startTextResize($event, index, 'e')"
+              />
+              <div
+                class="absolute -left-1 top-1/2 z-10 h-2.5 w-2.5 -translate-y-1/2 cursor-w-resize rounded-sm border border-sky-200 bg-sky-600/90 touch-none"
+                title="Ajustar largura"
+                @mousedown.stop.prevent="startTextResize($event, index, 'w')"
+                @touchstart.stop.prevent="startTextResize($event, index, 'w')"
+              />
+            </template>
             <button
               type="button"
               title="Remover este texto"
@@ -939,7 +669,7 @@
 
         <!-- Legenda — faixa branca por baixo da composição -->
         <div
-          v-if="photoCaptionApplied && !zoomLayout && !showingOriginal"
+          v-if="photoCaptionApplied && !showingOriginal"
           class="absolute z-[21] flex items-center justify-center overflow-hidden bg-white text-center shadow-sm ring-1 ring-black/10"
           :style="photoCaptionBandStyle"
         >
@@ -949,41 +679,70 @@
           >{{ formatCaptionText(photoCaptionApplied.number, photoCaptionApplied.description) }}</span>
         </div>
 
-        <!-- Imagens arrastadas da barra lateral (só folha em branco) -->
+        <!-- Recortes colados ou imagens arrastadas da barra lateral -->
         <div
-          v-for="ov in imageOverlays"
-          v-show="isBlankCanvas && !zoomLayout && !shouldBakeImageOverlaysInPreview"
+          v-for="ov in overlaysForRender"
+          v-show="imageOverlays.length > 0 && (!shouldHideDomImageOverlays || collageOverlayGhostMove)"
           :key="ov.id"
-          class="absolute z-[22] select-none touch-none overflow-visible ring-1 ring-white/70"
-          :class="{
-            'pointer-events-none': !canMoveImageOverlays,
-            'ring-2 ring-sky-400': selectedOverlayId === ov.id
-          }"
-          :style="overlayBoxStyle(ov)"
+          class="absolute select-none touch-none overflow-visible"
+          :class="[
+            overlayChromeVisible(ov.id)
+              ? collageOverlayGhostMove
+                ? 'ring-2 ring-sky-500/90'
+                : 'shadow-md ring-2 ring-sky-500/90'
+              : '',
+            {
+              'pointer-events-none':
+                !canMoveImageOverlays ||
+                areaStampMode === 'copy' ||
+                overlaysPassthroughForTextTool,
+              'ring-sky-400': selectedOverlayId === ov.id && overlayChromeVisible(ov.id)
+            }
+          ]"
+          :style="overlayLayerStyle(ov)"
         >
+          <div
+            class="relative h-full w-full cursor-move overflow-visible rounded-sm"
+            :class="
+              collageOverlayGhostMove || !overlayChromeVisible(ov.id)
+                ? 'bg-transparent'
+                : 'bg-black/20'
+            "
+            :title="overlayMoveTitle"
+            @mousedown.stop="startOverlayMove($event, ov.id)"
+            @touchstart.stop="startOverlayMove($event, ov.id)"
+            @contextmenu.prevent.stop="onOverlayContextMenu($event, ov.id)"
+          >
             <div
-              class="relative h-full w-full cursor-move overflow-visible rounded-sm bg-black/20"
-              :title="canMoveImageOverlays ? 'Arrastar para mover' : 'Selecione outra ferramenta ou feche Desenho para mover'"
-              @mousedown.stop="startOverlayMove($event, ov.id)"
-              @touchstart.stop="startOverlayMove($event, ov.id)"
+              class="absolute inset-0 overflow-hidden rounded-sm"
+              :class="{ 'opacity-0': collageOverlayGhostMove }"
             >
-            <div class="absolute inset-0 overflow-hidden rounded-sm">
               <img :src="ov.src" alt="" class="pointer-events-none h-full w-full" draggable="false" style="object-fit: fill" />
             </div>
-            <div
-              class="absolute -bottom-1 -right-1 z-10 h-3 w-3 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
-              title="Redimensionar"
-              @mousedown.stop.prevent="startOverlayResize($event, ov.id)"
-              @touchstart.stop.prevent="startOverlayResize($event, ov.id)"
-            ></div>
-            <button
-              type="button"
-              title="Remover imagem"
-              class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white shadow"
-              @click.stop="removeImageOverlay(ov.id)"
-            >×</button>
           </div>
+          <div
+            v-show="overlayChromeVisible(ov.id)"
+            class="absolute -bottom-1 -right-1 z-10 h-3 w-3 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
+            title="Redimensionar"
+            @mousedown.stop.prevent="startOverlayResize($event, ov.id)"
+            @touchstart.stop.prevent="startOverlayResize($event, ov.id)"
+          ></div>
+          <button
+            v-show="overlayChromeVisible(ov.id)"
+            type="button"
+            title="Remover imagem"
+            class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white shadow"
+            @click.stop="removeImageOverlay(ov.id)"
+          >×</button>
         </div>
+        <!-- Captura por cima dos overlays só em modo cópia (canvas branco e fotos normais) -->
+        <div
+          v-if="areaStampMode === 'copy'"
+          class="absolute z-[35] cursor-crosshair touch-none"
+          :style="imageDrawableCaptureStyle"
+          @mousedown.prevent="onAreaStampCapturePointerDown"
+          @touchstart.prevent="onAreaStampCapturePointerDown"
+        />
         <!-- Desenhos guardados por cima da imagem (camada vectorial até guardar) -->
         <svg
           v-if="showDrawingsOverlay"
@@ -1105,9 +864,26 @@
             @touchstart.stop.prevent="startDrawingMove($event, box.index)"
           />
         </div>
+        </div>
+        <!-- Camada de captura para borracha de desfoque/pixelização (por cima das imagens arrastadas) -->
+        <div
+          v-if="isMaskBrushModeActive"
+          class="absolute inset-0 z-[36] touch-none"
+          style="cursor: none"
+          @mousedown="onMaskBrushSurfaceMouseDown"
+          @pointermove="onMaskBrushSurfacePointerMove"
+          @contextmenu.prevent="onMaskBrushSurfaceContextMenu"
+          @touchstart="onMaskBrushSurfaceTouchStart"
+        >
+          <div
+            v-show="maskBrushHoverPos.visible"
+            class="pointer-events-none absolute box-border rounded-full border-2 border-white"
+            :style="maskBrushHoverRingStyle"
+          />
+        </div>
         <!-- Camada de desenho por cima da composição (folha + imagens arrastadas) -->
         <div
-          v-if="isDrawingCaptureActive && !zoomLayout"
+          v-if="isDrawingCaptureActive"
           class="absolute inset-0 z-[30] touch-none"
           :class="imageCursorClass"
           @mousedown="onDrawingSurfaceMouseDown"
@@ -1198,7 +974,7 @@
       <!-- Controles de Edição (z-index acima da zona de desfoque para o slider funcionar) -->
       <div 
         class="absolute bottom-0 left-0 right-0 z-40 p-4 bg-black bg-opacity-50 transition-transform duration-300"
-        :class="{'translate-y-full': !showControls && !activeControl && !drawingTool && !showDrawingMenu && !showPixelateMenu && !showBlurMenu && !showFilterMenu && !zoomDetailMode}"
+        :class="{'translate-y-full': !showControls && !activeControl && !drawingTool && !showDrawingMenu && !showPixelateMenu && !showBlurMenu && !showFilterMenu && !areaStampMode && !areaClipboard}"
       >
         <div class="flex justify-center space-x-4" v-if="!activeControl">
           <!-- Botão de Crop -->
@@ -1497,9 +1273,39 @@
               </div>
               <div v-if="drawingTool" class="mt-3 space-y-2 border-t border-white/10 pt-3 text-[11px] text-white" :class="{ '!mt-0 !border-t-0 !pt-0': !showDrawingMenu }">
                 <div class="flex flex-wrap items-center justify-center gap-2">
-                  <label class="flex items-center gap-1">Traço <input type="color" v-model="drawStrokeColor" class="h-6 w-8 cursor-pointer rounded border-0 bg-transparent" /></label>
+                  <label class="flex items-center gap-1">
+                    Traço
+                    <input
+                      v-model="drawStrokeColor"
+                      type="color"
+                      class="editor-color-input"
+                      @input="onDrawStrokeColorInput"
+                      @change="recordEditHistory"
+                    />
+                  </label>
                   <label class="flex items-center gap-1"><input v-model="drawFillEnabled" type="checkbox" class="rounded" /> Preench.</label>
-                  <label v-if="drawFillEnabled" class="flex items-center gap-1">Cor <input type="color" v-model="drawFillColor" class="h-6 w-8 cursor-pointer rounded border-0 bg-transparent" /></label>
+                  <label v-if="drawFillEnabled" class="flex items-center gap-1">
+                    Cor
+                    <input
+                      v-model="drawFillColor"
+                      type="color"
+                      class="editor-color-input"
+                      @input="onDrawFillColorInput"
+                      @change="recordEditHistory"
+                    />
+                  </label>
+                </div>
+                <div class="flex flex-wrap items-center justify-center gap-1">
+                  <button
+                    v-for="color in drawColorPresets"
+                    :key="`draw-stroke-${color}`"
+                    type="button"
+                    class="editor-color-preset"
+                    :class="{ 'editor-color-preset-active': drawStrokeColor === color }"
+                    :style="{ backgroundColor: color }"
+                    :title="`Traço ${color}`"
+                    @click="setDrawStrokeColor(color)"
+                  />
                 </div>
                 <div class="flex items-center justify-center gap-2">
                   <span class="text-white/60">Esp.</span>
@@ -1515,7 +1321,7 @@
                   </div>
                 </div>
                 <p v-if="drawingTool === 'bezier'" class="text-center text-amber-200/90">4 pontos (curva cúbica)</p>
-                <p v-if="(drawings.length || layoutDrawings.length) && (drawingTool || showDrawingMenu)" class="text-center text-emerald-200/90">
+                <p v-if="drawings.length && (drawingTool || showDrawingMenu)" class="text-center text-emerald-200/90">
                   Feche o Desenho para mover os traços na foto.
                 </p>
               </div>
@@ -1598,68 +1404,39 @@
           <div class="relative">
             <button
               type="button"
-              :title="zoomDetailMode ? 'Fechar painel (o zoom mantém-se)' : (zoomLayout ? 'Editar detalhe ampliado' : 'Detalhe ampliado — escolher zona e colocar no ecrã')"
-              @click="toggleZoomDetailMode"
+              :title="areaStampMode || areaClipboard ? 'Fechar copiar/colar área' : 'Copiar uma zona da foto e colar como recorte movível'"
+              @click="toggleAreaStampMode"
               class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
-              :class="{ 'bg-violet-600': zoomDetailMode || zoomLayout, 'ring-2 ring-violet-200/60': zoomDetailMode }"
+              :class="{ 'bg-teal-600': areaStampMode || areaClipboard, 'ring-2 ring-teal-200/60': areaStampMode || areaClipboard }"
             >
               <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
             </button>
             <div
-              v-show="zoomDetailMode"
-              class="absolute bottom-full left-1/2 z-[55] mb-2 w-[min(100vw-2rem,16rem)] ml-[calc(min(100vw-2rem,16rem)/-2)] rounded-2xl border border-white/15 bg-black/90 px-3 py-2.5 text-center text-[11px] text-white/80 shadow-2xl backdrop-blur-sm"
+              v-show="areaStampMode || areaClipboard"
+              class="absolute bottom-full left-1/2 z-[55] mb-2 w-[min(100vw-2rem,17rem)] ml-[calc(min(100vw-2rem,17rem)/-2)] rounded-2xl border border-white/15 bg-black/90 px-3 py-2.5 text-center text-[11px] text-white/80 shadow-2xl backdrop-blur-sm"
               @click.stop
             >
-              <p v-if="!zoomLayout">Arraste na foto para escolher a zona.</p>
-              <p v-else-if="zoomDetailSelecting">Arraste na foto reduzida para outra zona.</p>
-              <p v-else-if="!selectedZoomCalloutId && zoomCallouts.length">Toque num detalhe para o selecionar.</p>
-              <p v-else-if="!selectedZoomCalloutId">Foto reduzida; arraste os detalhes para posicionar.</p>
-              <p v-else class="text-violet-200">Detalhe {{ selectedZoomCalloutIndex + 1 }} selecionado</p>
-              <label v-if="selectedZoomCalloutId" class="mt-2 flex flex-col gap-1 text-left">
-                <span class="flex justify-between text-white/90">
-                  <span>Ampliação deste detalhe</span>
-                  <span class="tabular-nums text-violet-200">{{ selectedCalloutZoomLevel }}%</span>
-                </span>
-                <input
-                  v-model.number="selectedCalloutZoomLevel"
-                  type="range"
-                  min="50"
-                  max="400"
-                  step="5"
-                  class="h-1.5 w-full accent-violet-500"
-                />
-              </label>
-              <label v-else class="mt-2 flex flex-col gap-1 text-left">
-                <span class="flex justify-between text-white/90">
-                  <span>Ampliação (próximo detalhe)</span>
-                  <span class="tabular-nums text-violet-200">{{ zoomDetailLevel }}%</span>
-                </span>
-                <input
-                  v-model.number="zoomDetailLevel"
-                  type="range"
-                  min="50"
-                  max="400"
-                  step="5"
-                  class="h-1.5 w-full accent-violet-500"
-                />
-              </label>
+              <p v-if="areaStampMode === 'copy'">Arraste na foto — ao largar, a zona é copiada e colada como recorte movível.</p>
+              <p v-else-if="areaStampMode === 'paste'" class="text-teal-200">Toque na foto onde quer colar outra cópia.</p>
+              <p v-else-if="areaClipboard" class="text-teal-200/90">Área copiada — volte a activar a ferramenta ou use «Colar noutro sítio».</p>
+              <p v-else>Copie uma zona e cole-a noutro sítio sem alterar o resto.</p>
               <button
-                v-if="zoomLayout"
+                v-if="areaClipboard"
                 type="button"
-                class="mt-2 w-full rounded-lg bg-violet-700/80 px-2 py-1 text-xs text-white hover:bg-violet-600"
-                @click="startAnotherZoomCallout"
+                class="mt-2 w-full rounded-lg bg-teal-700/80 px-2 py-1 text-xs text-white hover:bg-teal-600"
+                @click="startAreaPasteMode"
               >
-                + Nova zona
+                Colar noutro sítio
               </button>
               <button
-                v-if="zoomLayout"
+                v-if="areaClipboard"
                 type="button"
                 class="mt-1.5 w-full rounded-lg px-2 py-1 text-xs text-white/70 hover:bg-white/10"
-                @click="removeAllZoomCallouts"
+                @click="clearAreaClipboard"
               >
-                Remover todos os detalhes
+                Limpar área copiada
               </button>
             </div>
           </div>
@@ -1715,7 +1492,7 @@
                 <label class="block text-white text-sm mb-1">Cor</label>
                 <div class="flex flex-wrap gap-2">
                   <button v-for="color in textColors" :key="color" type="button" :title="'Cor: ' + color" class="h-6 w-6 rounded-full border border-white" :style="{ backgroundColor: color }" :class="{ 'ring-2 ring-white': textColor === color }" @click="textColor = color; onTextPanelInput()" />
-                  <input v-model="textColor" type="color" class="h-6 w-8 cursor-pointer rounded border-0 bg-transparent" @input="onTextPanelInput" />
+                  <input v-model="textColor" type="color" class="editor-color-input" @input="onTextPanelInput" />
                 </div>
               </div>
               <div class="flex flex-wrap items-center gap-2">
@@ -1732,7 +1509,7 @@
                   Contorno
                 </label>
                 <div v-if="textStrokeEnabled" class="mt-2 flex items-center gap-2">
-                  <input v-model="textStrokeColor" type="color" class="h-6 w-8 border-0 bg-transparent" @input="onTextPanelInput" />
+                  <input v-model="textStrokeColor" type="color" class="editor-color-input" @input="onTextPanelInput" />
                   <input v-model.number="textStrokeWidth" type="range" min="1" max="8" class="flex-1 accent-white" @input="onTextPanelInput" />
                 </div>
               </div>
@@ -1744,7 +1521,7 @@
                 <div v-if="textBgEnabled" class="mt-2 space-y-2">
                   <div class="flex items-center gap-2">
                     <span class="text-xs text-white/70">Cor</span>
-                    <input v-model="textBgColor" type="color" class="h-6 w-8 border-0 bg-transparent" @input="onTextPanelInput" />
+                    <input v-model="textBgColor" type="color" class="editor-color-input" @input="onTextPanelInput" />
                   </div>
                   <div>
                     <label class="block text-xs text-white/70">Opacidade: {{ textBgOpacity }}%</label>
@@ -1825,7 +1602,7 @@
                 </button>
                 <label class="flex items-center gap-1 text-sm text-white">
                   Cor
-                  <input v-model="captionSettings.color" type="color" class="h-6 w-8 cursor-pointer rounded border-0 bg-transparent" />
+                  <input v-model="captionSettings.color" type="color" class="editor-color-input" />
                 </label>
               </div>
               <div v-if="photoCaptionDraft" class="space-y-2">
@@ -1948,7 +1725,7 @@
                   <label class="block text-white text-sm mb-1">Cor</label>
                   <div class="flex flex-wrap gap-2">
                     <button v-for="color in watermarkTextColors" :key="color" type="button" class="h-6 w-6 rounded-full border border-white" :style="{ backgroundColor: color }" :class="{ 'ring-2 ring-white': watermarkDraft.color === color }" @click="watermarkDraft.color = color" />
-                    <input v-model="watermarkDraft.color" type="color" class="h-6 w-8 cursor-pointer rounded border-0 bg-transparent" />
+                    <input v-model="watermarkDraft.color" type="color" class="editor-color-input" />
                   </div>
                 </div>
               </template>
@@ -2036,6 +1813,89 @@
         </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="overlayContextMenu"
+        class="fixed z-[100010] min-w-[12rem] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs text-gray-800 shadow-xl"
+        :style="overlayContextMenuStyle"
+        @mousedown.stop
+        @contextmenu.prevent
+      >
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveForward('overlay', overlayContextMenu.overlayId)"
+          @click="reorderOverlay(overlayContextMenu.overlayId, 'front')"
+        >
+          Trazer para a frente
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveForward('overlay', overlayContextMenu.overlayId)"
+          @click="reorderOverlay(overlayContextMenu.overlayId, 'forward')"
+        >
+          Avançar um nível
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveBackward('overlay', overlayContextMenu.overlayId)"
+          @click="reorderOverlay(overlayContextMenu.overlayId, 'backward')"
+        >
+          Recuar um nível
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveBackward('overlay', overlayContextMenu.overlayId)"
+          @click="reorderOverlay(overlayContextMenu.overlayId, 'back')"
+        >
+          Enviar para trás
+        </button>
+      </div>
+      <div
+        v-if="textContextMenu"
+        class="fixed z-[100010] min-w-[12rem] overflow-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs text-gray-800 shadow-xl"
+        :style="textContextMenuStyle"
+        @mousedown.stop
+        @contextmenu.prevent
+      >
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveForward('text', textContextMenu.textId)"
+          @click="reorderText(textContextMenu.textId, 'front')"
+        >
+          Trazer para a frente
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveForward('text', textContextMenu.textId)"
+          @click="reorderText(textContextMenu.textId, 'forward')"
+        >
+          Avançar um nível
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveBackward('text', textContextMenu.textId)"
+          @click="reorderText(textContextMenu.textId, 'backward')"
+        >
+          Recuar um nível
+        </button>
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+          :disabled="!layerCanMoveBackward('text', textContextMenu.textId)"
+          @click="reorderText(textContextMenu.textId, 'back')"
+        >
+          Enviar para trás
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -2189,10 +2049,9 @@ const galleryPositionLabel = computed(() => {
 const canUseGallerySwipe = computed(
   () =>
     props.galleryTotal > 1 &&
-    !zoomLayout.value &&
     !showCrop.value &&
     !drawingTool.value &&
-    !zoomDetailMode.value &&
+    !areaStampMode.value &&
     !activeControl.value &&
     viewZoom.value <= 1.02 &&
     !viewPanHandMode.value &&
@@ -2240,6 +2099,164 @@ const stageTransformStyle = computed(() => ({
   transformOrigin: '0 0'
 }))
 
+const GEOMETRY_TRANSITION_MS = 220
+const GEOMETRY_TRANSITION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
+
+const compositionLayerRef = ref(null)
+const compositionGeometry = ref({
+  active: false,
+  transform: '',
+  transition: '',
+  transformOrigin: '50% 50%'
+})
+const geometryDisplayLock = ref(false)
+const geometryDisplayOverlaySnapshot = ref(null)
+const geometryDisplayTextSnapshot = ref(null)
+
+const compositionGeometryLayerStyle = computed(() => {
+  const g = compositionGeometry.value
+  if (!g.active) {
+    return {}
+  }
+  return {
+    transform: g.transform,
+    transition: g.transition,
+    transformOrigin: g.transformOrigin,
+    willChange: 'transform'
+  }
+})
+
+const geometryAnimationEnabled = () =>
+  typeof window !== 'undefined'
+  && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+const getCompositionTransformOrigin = () => {
+  const el = imageRef.value
+  if (!el?.naturalWidth) {
+    return '50% 50%'
+  }
+  const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
+  const imgW = el.naturalWidth * scale
+  const imgH = el.naturalHeight * scale
+  const ox = (el.clientWidth - imgW) / 2 + imgW / 2
+  const oy = (el.clientHeight - imgH) / 2 + imgH / 2
+  return `${ox}px ${oy}px`
+}
+
+const beginCompositionGeometry = (transform) => {
+  compositionGeometry.value = {
+    active: true,
+    transform,
+    transition: `transform ${GEOMETRY_TRANSITION_MS}ms ${GEOMETRY_TRANSITION_EASING}`,
+    transformOrigin: getCompositionTransformOrigin()
+  }
+}
+
+const endCompositionGeometry = () => {
+  compositionGeometry.value = {
+    active: false,
+    transform: '',
+    transition: '',
+    transformOrigin: '50% 50%'
+  }
+}
+
+const lockGeometryDisplay = () => {
+  const lockOverlays = imageOverlays.value.length > 0
+  const lockTexts = texts.value.length > 0
+  if (!lockOverlays && !lockTexts) {
+    return
+  }
+  if (lockOverlays) {
+    geometryDisplayOverlaySnapshot.value = cloneJson(imageOverlays.value)
+  }
+  if (lockTexts) {
+    ensureTextIds()
+    geometryDisplayTextSnapshot.value = cloneJson(texts.value)
+  }
+  geometryDisplayLock.value = true
+}
+
+const unlockGeometryDisplay = () => {
+  geometryDisplayLock.value = false
+  geometryDisplayOverlaySnapshot.value = null
+  geometryDisplayTextSnapshot.value = null
+}
+
+const lockGeometryDisplayOverlays = () => {
+  lockGeometryDisplay()
+}
+
+const unlockGeometryDisplayOverlays = () => {
+  unlockGeometryDisplay()
+}
+
+const waitForCompositionTransition = () =>
+  new Promise((resolve) => {
+    const layer = compositionLayerRef.value
+    if (!layer || !compositionGeometry.value.active) {
+      resolve()
+      return
+    }
+    let settled = false
+    const finish = () => {
+      if (settled) {
+        return
+      }
+      settled = true
+      layer.removeEventListener('transitionend', onEnd)
+      resolve()
+    }
+    const onEnd = (e) => {
+      if (e.target === layer && e.propertyName === 'transform') {
+        finish()
+      }
+    }
+    layer.addEventListener('transitionend', onEnd)
+    window.setTimeout(finish, GEOMETRY_TRANSITION_MS + 80)
+  })
+
+const preloadImageUrl = (url) =>
+  new Promise((resolve, reject) => {
+    const img = new window.Image()
+    img.onload = () => resolve(url)
+    img.onerror = () => reject(new Error('Falha ao carregar pré-visualização'))
+    img.src = url
+  })
+
+const finalizeGeometryPreviewUrl = async (url) => {
+  if (url && url !== currentImageUrl.value) {
+    try {
+      await preloadImageUrl(url)
+    } catch {
+      // Pré-carregamento falhou — ainda assim actualiza o src
+    }
+  }
+  unlockGeometryDisplay()
+  endCompositionGeometry()
+  currentImageUrl.value = url
+}
+
+const runWithGeometryAnimation = async (cssTransform, applyEdit) => {
+  if (!geometryAnimationEnabled() || !imageRef.value) {
+    await applyEdit({ animated: false })
+    return
+  }
+  if (imageOverlays.value.length > 0 || texts.value.length > 0) {
+    lockGeometryDisplay()
+  }
+  beginCompositionGeometry(cssTransform)
+  await nextTick()
+  try {
+    await waitForCompositionTransition()
+    await applyEdit({ animated: true })
+  } catch (err) {
+    unlockGeometryDisplay()
+    endCompositionGeometry()
+    throw err
+  }
+}
+
 const viewZoomPercent = computed(() => Math.round(viewZoom.value * 100))
 
 /** Folha em branco com imagens arrastadas da barra lateral. */
@@ -2247,47 +2264,10 @@ const isCollageComposition = computed(
   () => isBlankCanvas.value && imageOverlays.value.length > 0
 )
 
-/** Desfoque/pixelização na folha em branco exige compor overlays no servidor. */
-const shouldBakeImageOverlaysInPreview = computed(() => {
-  if (!isCollageComposition.value) {
-    return false
-  }
-
-  return (
-    blur.value > 0 ||
-    showBlurRegion.value ||
-    committedBlurRegion.value ||
-    committedBlurMask.value ||
-    blurApplyGlobal.value ||
-    pixelate.value > 0 ||
-    showPixelateRegion.value ||
-    committedPixelateRegion.value ||
-    committedPixelateMask.value ||
-    pixelateApplyGlobal.value
-  )
-})
 
 const showDrawingsOverlay = computed(
-  () => drawings.value.length > 0 && !zoomLayout.value
+  () => drawings.value.length > 0
 )
-
-const usesLayoutDrawingSpace = computed(() => Boolean(zoomLayout.value))
-
-const showLayoutDrawingsOverlay = computed(
-  () => usesLayoutDrawingSpace.value && layoutDrawings.value.length > 0
-)
-
-const canEditZoomCallouts = computed(
-  () => Boolean(zoomDetailMode.value) && !drawingTool.value && !showDrawingMenu.value
-)
-
-const layoutDrawingSvgViewBox = computed(() => {
-  const layout = zoomLayout.value
-  if (!layout) {
-    return '0 0 1 1'
-  }
-  return `0 0 ${layout.canvasWidth} ${layout.canvasHeight}`
-})
 
 /** Camada por cima da composição enquanto uma ferramenta de desenho está selecionada. */
 const isDrawingCaptureActive = computed(() => {
@@ -2303,18 +2283,58 @@ const isDrawingCaptureActive = computed(() => {
   return true
 })
 
-/** Fotos arrastáveis só fora do modo desenho. */
-const canMoveImageOverlays = computed(
-  () => imageOverlays.value.length > 0 && !drawingTool.value && !showDrawingMenu.value
+/** Desfoque/pixelização (retângulo ou borracha) — overlays não devem capturar eventos. */
+const isEffectRegionToolActive = computed(
+  () => showBlurRegion.value || showPixelateRegion.value
 )
+
+const isMaskBrushModeActive = computed(
+  () =>
+    (showBlurRegion.value && blurShapeMode.value === 'brush') ||
+    (showPixelateRegion.value && pixelateShapeMode.value === 'brush')
+)
+
+/** Fotos arrastáveis só fora do modo desenho e de efeitos locais. */
+const canMoveImageOverlays = computed(
+  () =>
+    imageOverlays.value.length > 0 &&
+    !drawingTool.value &&
+    !showDrawingMenu.value &&
+    areaStampMode.value !== 'copy' &&
+    !isEffectRegionToolActive.value
+)
+
+/** Moldura e alças: sempre visíveis no modo normal; após pixelização só ao seleccionar/arrastar. */
+const overlayChromeVisible = (overlayId) => {
+  if (!collageOverlayGhostMove.value) {
+    return true
+  }
+  return selectedOverlayId.value === overlayId || movingOverlayId.value === overlayId
+}
+
+const overlayMoveTitle = computed(() => {
+  if (!canMoveImageOverlays.value) {
+    if (isEffectRegionToolActive.value) {
+      return 'Feche desfoque/pixelização para mover a imagem'
+    }
+    return 'Selecione outra ferramenta ou feche Desenho para mover'
+  }
+  if (imageOverlays.value.length > 1) {
+    return collageOverlayGhostMove.value
+      ? 'Toque na imagem para seleccionar e mover'
+      : 'Arrastar para mover · botão direito para ordem das camadas'
+  }
+  return collageOverlayGhostMove.value
+    ? 'Toque na imagem para seleccionar e mover (a pixelização acompanha)'
+    : 'Arrastar para mover'
+})
 
 /** Desenhos arrastáveis sobre a imagem (fora do modo Desenho). */
 const canMoveDrawings = computed(
   () =>
     drawings.value.length > 0 &&
     !drawingTool.value &&
-    !showDrawingMenu.value &&
-    !zoomLayout.value
+    !showDrawingMenu.value
 )
 
 const selectedDrawingIndex = ref(null)
@@ -2389,13 +2409,155 @@ let maskBrushStrokeErase = false
 let maskBrushImageKey = ''
 /** Desenhos vectoriais (coordenadas em pixels da imagem natural). */
 const drawings = ref([])
-/** Desenhos na composição de zoom (coordenadas do canvas branco). */
-const layoutDrawings = ref([])
 const drawingTool = ref(null)
 const drawStrokeColor = ref('#FFFF00')
-const drawFillColor = ref('#FF000066')
+const drawFillColor = ref('#FF0000')
 const drawFillEnabled = ref(false)
 const drawStrokeWidth = ref(4)
+const drawColorPresets = [
+  '#000000',
+  '#FFFFFF',
+  '#FF0000',
+  '#FFFF00',
+  '#00FF00',
+  '#0000FF',
+  '#FF00FF',
+  '#00FFFF'
+]
+
+const normalizeHexColorInput = (value, fallback = '#000000') => {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  const match = value.trim().match(/^#?([0-9a-f]{6})/i)
+
+  return match ? `#${match[1].toLowerCase()}` : fallback
+}
+
+const onDrawStrokeColorInput = (event) => {
+  drawStrokeColor.value = normalizeHexColorInput(event.target?.value, drawStrokeColor.value)
+  applyDrawingStyleToFocusedDrawing()
+}
+
+const onDrawFillColorInput = (event) => {
+  drawFillColor.value = normalizeHexColorInput(event.target?.value, drawFillColor.value)
+  applyDrawingStyleToFocusedDrawing()
+}
+
+const setDrawStrokeColor = (color) => {
+  drawStrokeColor.value = color
+  applyDrawingStyleToFocusedDrawing()
+  recordEditHistory()
+}
+
+const resolveStyleTargetDrawingIndex = () => {
+  const list = drawings.value
+  if (!list.length) {
+    return -1
+  }
+
+  if (
+    selectedDrawingIndex.value !== null &&
+    selectedDrawingIndex.value >= 0 &&
+    selectedDrawingIndex.value < list.length
+  ) {
+    return selectedDrawingIndex.value
+  }
+
+  if (showDrawingMenu.value || drawingTool.value) {
+    return list.length - 1
+  }
+
+  return -1
+}
+
+const applyStyleToDrawingObject = (drawing) => {
+  if (!drawing?.type) {
+    return drawing
+  }
+
+  const next = {
+    ...drawing,
+    strokeColor: drawStrokeColor.value,
+    strokeWidth: drawStrokeWidth.value
+  }
+
+  if (drawing.type === 'pixel' || drawing.type === 'fill') {
+    next.color =
+      drawFillEnabled.value && drawFillColor.value
+        ? drawFillColor.value
+        : drawStrokeColor.value
+  }
+
+  if (drawFillEnabled.value && drawFillColor.value) {
+    next.fillColor = drawFillColor.value
+  } else {
+    delete next.fillColor
+  }
+
+  return next
+}
+
+const applyDrawingStyleToFocusedDrawing = () => {
+  const listRef = drawings
+  const index = resolveStyleTargetDrawingIndex()
+  if (index < 0) {
+    return
+  }
+
+  const current = listRef.value[index]
+  if (!current) {
+    return
+  }
+
+  listRef.value[index] = applyStyleToDrawingObject(current)
+}
+
+let suppressDrawingStylePanelSync = false
+
+const syncDrawingStyleFromDrawing = (drawing) => {
+  if (!drawing) {
+    return
+  }
+
+  suppressDrawingStylePanelSync = true
+
+  if (drawing.strokeColor) {
+    drawStrokeColor.value = normalizeHexColorInput(drawing.strokeColor, drawStrokeColor.value)
+  } else if (drawing.color) {
+    drawStrokeColor.value = normalizeHexColorInput(drawing.color, drawStrokeColor.value)
+  }
+
+  if (drawing.strokeWidth != null) {
+    drawStrokeWidth.value = drawing.strokeWidth
+  }
+
+  if (drawing.fillColor) {
+    drawFillEnabled.value = true
+    drawFillColor.value = normalizeHexColorInput(drawing.fillColor, drawFillColor.value)
+  } else if (drawing.type !== 'pixel' && drawing.type !== 'fill') {
+    drawFillEnabled.value = false
+  }
+
+  nextTick(() => {
+    suppressDrawingStylePanelSync = false
+  })
+}
+
+watch(drawFillEnabled, () => {
+  if (suppressDrawingStylePanelSync) {
+    return
+  }
+  applyDrawingStyleToFocusedDrawing()
+})
+
+watch(drawStrokeWidth, () => {
+  if (suppressDrawingStylePanelSync) {
+    return
+  }
+  applyDrawingStyleToFocusedDrawing()
+})
 const drawDrag = ref(null)
 const penDraftPoints = ref([])
 const isPenDrawing = ref(false)
@@ -2424,20 +2586,15 @@ const filterPresetList = [
   { id: 'vivid', label: 'Vívido', desc: 'Cores mais intensas' }
 ]
 
-/** Detalhe ampliado: composição com foto reduzida + recortes posicionáveis. */
-const zoomDetailMode = ref(false)
-const zoomDetailSelecting = ref(false)
-/** Ampliação por defeito para o próximo detalhe (50–400 %). */
-const zoomDetailLevel = ref(150)
-const selectedZoomCalloutId = ref(null)
-const zoomLayout = ref(null)
-const zoomCallouts = ref([])
-const zoomSelectDrag = ref(null)
-const layoutBoardRef = ref(null)
-const movingZoomCalloutId = ref(null)
-const zoomCalloutMoveGrab = ref({ x: 0, y: 0 })
-const resizingZoomCalloutId = ref(null)
-const zoomCalloutResizeStart = ref(null)
+/** Copiar/colar zona da foto como recorte movível (overlay). */
+const areaStampMode = ref(null)
+const areaClipboard = ref(null)
+const areaSelectDrag = ref(null)
+const overlayContextMenu = ref(null)
+const textContextMenu = ref(null)
+/** Ordem de empilhamento: texto e imagens coladas partilham a mesma pilha. */
+const canvasLayerStack = ref([])
+const CANVAS_LAYER_Z_BASE = 20
 
 const imageSize = ref({ width: 0, height: 0 })
 /** Incrementado quando sabemos as dimensões naturais — o Vue não observa naturalWidth do <img>. */
@@ -2474,30 +2631,22 @@ const showMaskBrushSizeControl = computed(
 
 const showControls = ref(true)
 
-/** Margem inferior do viewport para a imagem não ficar sob a barra de ferramentas. */
+/** Margem inferior estável (pb-24) sempre que há barra ou ferramenta activa; sem saltos. */
 const viewportBottomPaddingClass = computed(() => {
   if (
-    showCrop.value ||
-    showBlurRegion.value ||
-    showPixelateRegion.value ||
+    showControls.value ||
+    activeControl.value ||
+    showDrawingMenu.value ||
+    drawingTool.value ||
     showPixelateMenu.value ||
     showBlurMenu.value ||
     showFilterMenu.value ||
-    zoomDetailMode ||
-    zoomLayout.value
+    areaStampMode.value ||
+    areaClipboard.value ||
+    showCrop.value ||
+    showBlurRegion.value ||
+    showPixelateRegion.value
   ) {
-    return 'pb-40'
-  }
-  if (activeControl.value === 'text') {
-    return 'pb-52'
-  }
-  if (activeControl.value) {
-    return 'pb-32'
-  }
-  if (showDrawingMenu.value || drawingTool.value) {
-    return 'pb-40'
-  }
-  if (showControls.value) {
     return 'pb-24'
   }
   return ''
@@ -2528,6 +2677,8 @@ const textBgColor = ref('#000000')
 const textBgOpacity = ref(75)
 const textBgPadding = ref(6)
 const selectedTextIndex = ref(null)
+const resizingTextIndex = ref(null)
+const textResizeStart = ref(null)
 const textPosition = ref({ x: 0, y: 0 })
 const texts = ref([])
 const isMovingText = ref(false)
@@ -2535,6 +2686,19 @@ const movingTextIndex = ref(null)
 const textOffset = ref({ x: 0, y: 0 })
 /** Imagens extra: x,y,width,height em px da imagem natural; src = data URL. */
 const imageOverlays = ref([])
+
+const overlaysForRender = computed(() =>
+  geometryDisplayLock.value && geometryDisplayOverlaySnapshot.value
+    ? geometryDisplayOverlaySnapshot.value
+    : imageOverlays.value
+)
+
+const textsForRender = computed(() =>
+  geometryDisplayLock.value && geometryDisplayTextSnapshot.value
+    ? geometryDisplayTextSnapshot.value
+    : texts.value
+)
+
 const selectedOverlayId = ref(null)
 
 const createDefaultCaptionSettings = () => ({
@@ -2724,16 +2888,15 @@ const captureEditSnapshot = () => ({
   pixelateApplyGlobal: pixelateApplyGlobal.value,
   maskBrushRadiusNatural: maskBrushRadiusNatural.value,
   drawings: cloneJson(drawings.value),
-  layoutDrawings: cloneJson(layoutDrawings.value),
   imageOverlays: cloneJson(imageOverlays.value),
   selectedOverlayId: selectedOverlayId.value,
   captionSettings: cloneJson(captionSettings.value),
   photoCaptionApplied: photoCaptionApplied.value ? cloneJson(photoCaptionApplied.value) : null,
   texts: cloneJson(texts.value),
+  canvasLayerStack: cloneJson(canvasLayerStack.value),
   watermarkApplied: watermarkApplied.value ? cloneJson(watermarkApplied.value) : null,
-  zoomLayout: zoomLayout.value ? cloneJson(zoomLayout.value) : null,
-  zoomCallouts: cloneJson(zoomCallouts.value),
-  zoomDetailMode: zoomDetailMode.value
+  areaStampMode: areaStampMode.value,
+  areaClipboard: areaClipboard.value ? cloneJson(areaClipboard.value) : null
 })
 
 const snapshotsEqual = (a, b) => {
@@ -2787,6 +2950,10 @@ const canRedoEdit = computed(() => {
 
 const bootstrapEditHistory = () => {
   editHistoryLock = false
+  ensureTextIds()
+  if (canvasLayerStack.value.length === 0) {
+    rebuildCanvasLayerStackFromLayers()
+  }
   resetEditHistoryStack(captureEditSnapshot())
 }
 
@@ -2862,7 +3029,6 @@ const restoreEditSnapshot = async (snap) => {
   pixelateApplyGlobal.value = Boolean(snap.pixelateApplyGlobal)
   maskBrushRadiusNatural.value = snap.maskBrushRadiusNatural
   drawings.value = cloneJson(snap.drawings)
-  layoutDrawings.value = cloneJson(snap.layoutDrawings ?? [])
   imageOverlays.value = cloneJson(snap.imageOverlays)
   selectedOverlayId.value = snap.selectedOverlayId ?? imageOverlays.value[0]?.id ?? null
   captionSettings.value = snap.captionSettings
@@ -2881,14 +3047,31 @@ const restoreEditSnapshot = async (snap) => {
   }
   photoCaptionDraft.value = null
   texts.value = cloneJson(snap.texts)
+  ensureTextIds()
+  if (Array.isArray(snap.canvasLayerStack) && snap.canvasLayerStack.length > 0) {
+    canvasLayerStack.value = cloneJson(snap.canvasLayerStack)
+    pruneCanvasLayerStack()
+  } else {
+    rebuildCanvasLayerStackFromLayers()
+  }
   watermarkApplied.value = snap.watermarkApplied ? cloneJson(snap.watermarkApplied) : null
   watermarkDraft.value = null
-  zoomLayout.value = snap.zoomLayout ? cloneJson(snap.zoomLayout) : null
-  zoomCallouts.value = cloneJson(snap.zoomCallouts)
-  zoomDetailMode.value = snap.zoomDetailMode
+  areaStampMode.value = snap.areaStampMode ?? null
+  areaClipboard.value = snap.areaClipboard ? cloneJson(snap.areaClipboard) : null
   selectedTextIndex.value = null
   await restoreBrushMaskFromDataUrl(snap.blurMaskDataUrl, 'blur', snap.blurMaskDirty)
   await restoreBrushMaskFromDataUrl(snap.pixelateMaskDataUrl, 'pixelate', snap.pixelateMaskDirty)
+  clearCommittedMaskCanvasCaches()
+  if (committedPixelateMask.value && !snap.pixelateMaskDirty) {
+    await loadCommittedMaskCacheFromDataUrl(committedPixelateMask.value, 'pixelate')
+  } else if (pixelateMaskDirty.value && pixelateBrushCanvas) {
+    syncPixelateMaskCacheFromBrush()
+  }
+  if (committedBlurMask.value && !snap.blurMaskDirty) {
+    await loadCommittedMaskCacheFromDataUrl(committedBlurMask.value, 'blur')
+  } else if (blurMaskDirty.value && blurBrushCanvas) {
+    syncBlurMaskCacheFromBrush()
+  }
   editHistoryLock = false
 }
 
@@ -2931,9 +3114,8 @@ const onHistoryKeyDown = (e) => {
   }
   if (
     (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
-    !zoomLayout.value &&
     !drawingTool.value &&
-    !zoomDetailMode.value &&
+    !areaStampMode.value &&
     !showCrop.value
   ) {
     if (e.key === 'ArrowLeft' && canGalleryPrev.value) {
@@ -3029,105 +3211,42 @@ const pixelateRegionStyle = computed(() => ({
   height: `${pixelateSize.value.height}px`
 }))
 
-const layoutBoardMetrics = computed(() => {
-  zoomLayout.value
-  imageNaturalVersion.value
-  const layout = zoomLayout.value
-  const vp = viewportRef.value
-  if (!layout || !vp) {
+const areaSelectImgStyle = computed(() => {
+  void imageNaturalVersion.value
+  const d = areaSelectDrag.value
+  if (!d?.active) {
     return null
   }
-  const vw = vp.clientWidth
-  const vh = vp.clientHeight
-  if (!vw || !vh) {
-    return null
-  }
-  const scale = Math.min(vw / layout.canvasWidth, vh / layout.canvasHeight) * 0.9
-  return {
-    scale,
-    width: layout.canvasWidth * scale,
-    height: layout.canvasHeight * scale
-  }
-})
-
-const layoutBoardContainerStyle = computed(() => {
-  const m = layoutBoardMetrics.value
-  if (!m) {
-    return {}
-  }
-  return { width: `${m.width}px`, height: `${m.height}px` }
-})
-
-const layoutBaseImgStyle = computed(() => {
-  const layout = zoomLayout.value
-  const m = layoutBoardMetrics.value
-  if (!layout || !m) {
-    return {}
-  }
-  const b = layout.base
-  return {
-    left: `${b.x * m.scale}px`,
-    top: `${b.y * m.scale}px`,
-    width: `${b.width * m.scale}px`,
-    height: `${b.height * m.scale}px`
-  }
-})
-
-const zoomSelectImgStyle = computed(() => {
-  const d = zoomSelectDrag.value
-  if (!d?.active || d.space !== 'img') {
-    return null
-  }
-  const left = Math.min(d.x0, d.x1)
-  const top = Math.min(d.y0, d.y1)
-  const w = Math.abs(d.x1 - d.x0)
-  const h = Math.abs(d.y1 - d.y0)
-  if (w < 2 || h < 2) {
+  let left = Math.min(d.x0, d.x1)
+  let top = Math.min(d.y0, d.y1)
+  let w = Math.abs(d.x1 - d.x0)
+  let h = Math.abs(d.y1 - d.y0)
+  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
+  if (drawnW > 0 && drawnH > 0) {
+    const right = Math.min(ox + drawnW, left + w)
+    const bottom = Math.min(oy + drawnH, top + h)
+    left = Math.max(ox, left)
+    top = Math.max(oy, top)
+    w = Math.max(1, right - left)
+    h = Math.max(1, bottom - top)
+  } else if (w < 1 && h < 1) {
     return null
   }
   return { left: `${left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px` }
 })
 
-const zoomSelectBoardStyle = computed(() => {
-  const d = zoomSelectDrag.value
-  const m = layoutBoardMetrics.value
-  if (!d?.active || d.space !== 'layout' || !m) {
-    return null
+/** Área clicável da foto (object-fit: contain) para copiar/colar. */
+const imageDrawableCaptureStyle = computed(() => {
+  void imageNaturalVersion.value
+  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
+  if (drawnW < 1 || drawnH < 1) {
+    return { display: 'none' }
   }
-  const left = Math.min(d.x0, d.x1) * m.scale
-  const top = Math.min(d.y0, d.y1) * m.scale
-  const w = Math.abs(d.x1 - d.x0) * m.scale
-  const h = Math.abs(d.y1 - d.y0) * m.scale
-  if (w < 2 || h < 2) {
-    return null
-  }
-  return { left: `${left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px` }
-})
-
-const selectedZoomCallout = computed(() =>
-  zoomCallouts.value.find((c) => c.id === selectedZoomCalloutId.value) ?? null
-)
-
-const selectedZoomCalloutIndex = computed(() => {
-  if (!selectedZoomCalloutId.value) {
-    return -1
-  }
-  return zoomCallouts.value.findIndex((c) => c.id === selectedZoomCalloutId.value)
-})
-
-const selectedCalloutZoomLevel = computed({
-  get() {
-    const c = selectedZoomCallout.value
-    return c?.zoomLevel ?? zoomDetailLevel.value
-  },
-  set(value) {
-    const level = Math.max(50, Math.min(400, Math.round(Number(value) || 150)))
-    const c = selectedZoomCallout.value
-    if (!c) {
-      zoomDetailLevel.value = level
-      return
-    }
-    applyZoomLevelToCallout(c.id, level)
+  return {
+    left: `${ox}px`,
+    top: `${oy}px`,
+    width: `${drawnW}px`,
+    height: `${drawnH}px`
   }
 })
 
@@ -3217,24 +3336,12 @@ const drawingRubberBand = computed(() => {
 
 const showDrawingLiveOverlay = computed(
   () =>
-    !usesLayoutDrawingSpace.value &&
-    (!!drawingRubberBand.value ||
-      (drawingTool.value === 'pen' && penDraftPoints.value.length > 1) ||
-      (drawingTool.value === 'polygon' && pathDraftPoints.value.length > 0) ||
-      (drawingTool.value === 'bezier' &&
-        pathDraftPoints.value.length > 0 &&
-        pathDraftPoints.value.length < 4))
-)
-
-const showLayoutDrawingLiveOverlay = computed(
-  () =>
-    usesLayoutDrawingSpace.value &&
-    (!!drawingRubberBand.value ||
-      (drawingTool.value === 'pen' && penDraftPoints.value.length > 1) ||
-      (drawingTool.value === 'polygon' && pathDraftPoints.value.length > 0) ||
-      (drawingTool.value === 'bezier' &&
-        pathDraftPoints.value.length > 0 &&
-        pathDraftPoints.value.length < 4))
+    !!drawingRubberBand.value ||
+    (drawingTool.value === 'pen' && penDraftPoints.value.length > 1) ||
+    (drawingTool.value === 'polygon' && pathDraftPoints.value.length > 0) ||
+    (drawingTool.value === 'bezier' &&
+      pathDraftPoints.value.length > 0 &&
+      pathDraftPoints.value.length < 4)
 )
 
 const penDraftPointsAttr = computed(() =>
@@ -3287,6 +3394,9 @@ const buildMaskBrushCursor = (fillHex, rNatPx) => {
 }
 
 const maskBrushCursorStyle = computed(() => {
+  if (isMaskBrushModeActive.value) {
+    return {}
+  }
   void maskBrushRadiusNatural.value
   void imageNaturalVersion.value
   const rNat = effectiveMaskBrushRadius.value
@@ -3306,6 +3416,100 @@ const maskBrushCursorStyle = computed(() => {
     return buildMaskBrushCursor(erase ? '#888888' : '#ffc864', rNat)
   }
   return {}
+})
+
+/** Anel do pincel em DOM (estável; o cursor SVG piscava a cada pré-visualização). */
+const maskBrushHoverPos = ref({ x: 0, y: 0, visible: false })
+let lastEditorPointerEvent = null
+let maskBrushHoverTrackerAttached = false
+
+const syncMaskBrushHoverAfterModeEnter = () => {
+  nextTick(() => {
+    if (lastEditorPointerEvent && isMaskBrushModeActive.value) {
+      updateMaskBrushHoverFromEvent(lastEditorPointerEvent)
+    }
+  })
+}
+
+const trackMaskBrushPointer = (e) => {
+  if (!isMaskBrushModeActive.value || resizeDirection.value) {
+    return
+  }
+  updateMaskBrushHoverFromEvent(e)
+}
+
+const attachMaskBrushHoverTracker = () => {
+  if (maskBrushHoverTrackerAttached || typeof window === 'undefined') {
+    return
+  }
+  maskBrushHoverTrackerAttached = true
+  window.addEventListener('pointermove', trackMaskBrushPointer, { passive: true })
+}
+
+const detachMaskBrushHoverTracker = () => {
+  if (!maskBrushHoverTrackerAttached || typeof window === 'undefined') {
+    return
+  }
+  maskBrushHoverTrackerAttached = false
+  window.removeEventListener('pointermove', trackMaskBrushPointer)
+}
+
+const onEditorViewportPointerMove = (e) => {
+  lastEditorPointerEvent = e
+  trackMaskBrushPointer(e)
+}
+
+const maskBrushHoverRingStyle = computed(() => {
+  void maskBrushRadiusNatural.value
+  void imageNaturalVersion.value
+  const rDisplay = Math.max(2, effectiveMaskBrushRadius.value * maskBrushDisplayScale())
+  const diameter = rDisplay * 2
+  const erase = maskBrushEraseMode.value
+  let fill = 'rgba(196, 181, 253, 0.42)'
+  if (showPixelateRegion.value && pixelateShapeMode.value === 'brush') {
+    fill = erase ? 'rgba(136, 136, 136, 0.42)' : 'rgba(255, 200, 100, 0.42)'
+  } else if (erase) {
+    fill = 'rgba(136, 136, 136, 0.42)'
+  }
+  const { x, y } = maskBrushHoverPos.value
+  return {
+    left: `${x - rDisplay}px`,
+    top: `${y - rDisplay}px`,
+    width: `${diameter}px`,
+    height: `${diameter}px`,
+    backgroundColor: fill
+  }
+})
+
+const updateMaskBrushHoverFromEvent = (e) => {
+  if (!isMaskBrushModeActive.value || resizeDirection.value) {
+    return
+  }
+  const pos = clientToImgLocal(e)
+  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
+  const inside =
+    drawnW > 0 &&
+    drawnH > 0 &&
+    pos.x >= ox &&
+    pos.x <= ox + drawnW &&
+    pos.y >= oy &&
+    pos.y <= oy + drawnH
+  maskBrushHoverPos.value = { x: pos.x, y: pos.y, visible: inside }
+}
+
+const onMaskBrushSurfacePointerMove = (e) => {
+  lastEditorPointerEvent = e
+  trackMaskBrushPointer(e)
+}
+
+watch(isMaskBrushModeActive, (active) => {
+  if (active) {
+    attachMaskBrushHoverTracker()
+    syncMaskBrushHoverAfterModeEnter()
+  } else {
+    detachMaskBrushHoverTracker()
+    maskBrushHoverPos.value = { x: 0, y: 0, visible: false }
+  }
 })
 
 const clearPixelateBrushMask = () => {
@@ -3466,6 +3670,7 @@ const handlePixelateBrushMove = (e) => {
   if (e.cancelable && e.type === 'touchmove') {
     e.preventDefault()
   }
+  updateMaskBrushHoverFromEvent(e)
   const p = eventToNaturalPoint(e)
   if (pixelBrushMaskLast) {
     drawPixelateBrushStroke(pixelBrushMaskLast.x, pixelBrushMaskLast.y, p.x, p.y)
@@ -3496,6 +3701,7 @@ const startPixelateBrushStroke = (e) => {
   if (!ensurePixelateBrushCanvas()) {
     return
   }
+  ensurePixelateEffectStrength()
   e.preventDefault()
   e.stopPropagation()
   maskBrushStrokeErase = resolveMaskBrushEraseFromEvent(e)
@@ -3515,6 +3721,7 @@ const startPixelateBrushStroke = (e) => {
     maskBrushStrokeErase
   )
   pixelateMaskDirty.value = true
+  updateMaskBrushHoverFromEvent(e)
   flushPreview()
   window.addEventListener('mousemove', handlePixelateBrushMove)
   window.addEventListener('mouseup', stopPixelateBrushStroke)
@@ -3634,6 +3841,7 @@ const handleBlurBrushMove = (e) => {
   if (e.cancelable && e.type === 'touchmove') {
     e.preventDefault()
   }
+  updateMaskBrushHoverFromEvent(e)
   const p = eventToNaturalPoint(e)
   if (blurBrushMaskLast) {
     drawBlurBrushStroke(blurBrushMaskLast.x, blurBrushMaskLast.y, p.x, p.y)
@@ -3664,6 +3872,7 @@ const startBlurBrushStroke = (e) => {
   if (!ensureBlurBrushCanvas()) {
     return
   }
+  ensureBlurEffectStrength()
   e.preventDefault()
   e.stopPropagation()
   maskBrushStrokeErase = resolveMaskBrushEraseFromEvent(e)
@@ -3683,6 +3892,7 @@ const startBlurBrushStroke = (e) => {
     maskBrushStrokeErase
   )
   blurMaskDirty.value = true
+  updateMaskBrushHoverFromEvent(e)
   flushPreview()
   window.addEventListener('mousemove', handleBlurBrushMove)
   window.addEventListener('mouseup', stopBlurBrushStroke)
@@ -3725,8 +3935,11 @@ const syncImageNaturalMetrics = () => {
   }
   const nw = el.naturalWidth
   const nh = el.naturalHeight
+  const sizeChanged = imageSize.value.width !== nw || imageSize.value.height !== nh
   imageSize.value = { width: nw, height: nh }
-  imageNaturalVersion.value++
+  if (sizeChanged) {
+    imageNaturalVersion.value++
+  }
   const key = `${nw}x${nh}`
   const b = maskBrushRadiusBounds.value
   if (key !== maskBrushImageKey) {
@@ -3739,6 +3952,7 @@ const syncImageNaturalMetrics = () => {
 
 const onImageLoad = () => {
   syncImageNaturalMetrics()
+  nextTick(() => ensureImageLayoutObserver())
   if (showPixelateRegion.value && pixelateShapeMode.value === 'brush') {
     ensurePixelateBrushCanvas()
   }
@@ -3766,6 +3980,35 @@ const onImageLoad = () => {
 
 let cropDisplaySyncRaf = 0
 let cropLayoutObserver = null
+let imageLayoutObserver = null
+
+const bumpImageDisplayLayout = () => {
+  imageNaturalVersion.value++
+}
+
+const ensureImageLayoutObserver = () => {
+  const el = imageRef.value
+  if (!el || imageLayoutObserver) {
+    return
+  }
+  imageLayoutObserver = new ResizeObserver(() => {
+    if (!imageRef.value?.naturalWidth) {
+      return
+    }
+    bumpImageDisplayLayout()
+    if (showCrop.value) {
+      trySyncCropDisplayNow()
+    }
+  })
+  imageLayoutObserver.observe(el)
+}
+
+const disconnectImageLayoutObserver = () => {
+  if (imageLayoutObserver) {
+    imageLayoutObserver.disconnect()
+    imageLayoutObserver = null
+  }
+}
 
 const cancelCropDisplaySyncRaf = () => {
   if (cropDisplaySyncRaf) {
@@ -3896,6 +4139,7 @@ const stopBlurPan = () => {
   document.removeEventListener('mouseup', stopBlurPan)
   document.removeEventListener('touchmove', handleBlurPan)
   document.removeEventListener('touchend', stopBlurPan)
+  ensureBlurEffectStrength()
   applyChanges()
 }
 
@@ -3950,6 +4194,7 @@ const stopPixelatePan = () => {
   document.removeEventListener('mouseup', stopPixelatePan)
   document.removeEventListener('touchmove', handlePixelatePan)
   document.removeEventListener('touchend', stopPixelatePan)
+  ensurePixelateEffectStrength()
   applyChanges()
 }
 
@@ -4108,6 +4353,11 @@ const stopResize = () => {
   document.removeEventListener('touchmove', handleResize)
   document.removeEventListener('touchend', stopResize)
   if (had && !wasCrop) {
+    if (resizeKind.value === 'blur') {
+      ensureBlurEffectStrength()
+    } else if (resizeKind.value === 'pixelate') {
+      ensurePixelateEffectStrength()
+    }
     applyChanges()
   }
 }
@@ -4178,6 +4428,640 @@ const toggleCrop = () => {
   confirmCrop()
 }
 
+let committedPixelateMaskCanvasCache = null
+let committedBlurMaskCanvasCache = null
+
+const cloneMaskCanvas = (source) => {
+  if (!source) {
+    return null
+  }
+  const copy = document.createElement('canvas')
+  copy.width = source.width
+  copy.height = source.height
+  const ctx = copy.getContext('2d')
+  if (!ctx) {
+    return null
+  }
+  ctx.drawImage(source, 0, 0)
+  return copy
+}
+
+const syncPixelateMaskCacheFromBrush = () => {
+  committedPixelateMaskCanvasCache = cloneMaskCanvas(pixelateBrushCanvas)
+}
+
+const syncBlurMaskCacheFromBrush = () => {
+  committedBlurMaskCanvasCache = cloneMaskCanvas(blurBrushCanvas)
+}
+
+const clearCommittedMaskCanvasCaches = () => {
+  committedPixelateMaskCanvasCache = null
+  committedBlurMaskCanvasCache = null
+}
+
+const loadCommittedMaskCacheFromDataUrl = (dataUrl, kind) =>
+  new Promise((resolve) => {
+    if (!dataUrl) {
+      resolve()
+      return
+    }
+    const img = new window.Image()
+    img.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = img.width
+      c.height = img.height
+      const ctx = c.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(img, 0, 0)
+        if (kind === 'blur') {
+          committedBlurMaskCanvasCache = c
+        } else {
+          committedPixelateMaskCanvasCache = c
+        }
+      }
+      resolve()
+    }
+    img.onerror = () => resolve()
+    img.src = dataUrl
+  })
+
+const shiftMaskCanvasByNaturalDelta = (canvas, dxNat, dyNat, nw, nh) => {
+  if (!canvas || (!dxNat && !dyNat)) {
+    return
+  }
+  const mw = canvas.width
+  const mh = canvas.height
+  const sdx = (dxNat / nw) * mw
+  const sdy = (dyNat / nh) * mh
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    return
+  }
+  const copy = document.createElement('canvas')
+  copy.width = mw
+  copy.height = mh
+  const copyCtx = copy.getContext('2d')
+  if (!copyCtx) {
+    return
+  }
+  copyCtx.drawImage(canvas, 0, 0)
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(0, 0, mw, mh)
+  ctx.drawImage(copy, sdx, sdy)
+}
+
+const rectsIntersectNatural = (a, b) =>
+  a.x < b.x + b.width
+  && a.x + a.width > b.x
+  && a.y < b.y + b.height
+  && a.y + a.height > b.y
+
+const transformRegionForOverlayResize = (region, oldBox, newBox) => {
+  if (!rectsIntersectNatural(region, oldBox)) {
+    return region
+  }
+  const sx = newBox.width / oldBox.width
+  const sy = newBox.height / oldBox.height
+  return {
+    x: Math.round(newBox.x + (region.x - oldBox.x) * sx),
+    y: Math.round(newBox.y + (region.y - oldBox.y) * sy),
+    width: Math.max(1, Math.round(region.width * sx)),
+    height: Math.max(1, Math.round(region.height * sy))
+  }
+}
+
+const scaleMaskCanvasForOverlayResize = (canvas, oldBox, newBox, nw, nh) => {
+  if (!canvas || oldBox.width <= 0 || oldBox.height <= 0) {
+    return
+  }
+  const mw = canvas.width
+  const mh = canvas.height
+  const toMaskRect = (box) => ({
+    x: (box.x / nw) * mw,
+    y: (box.y / nh) * mh,
+    w: (box.width / nw) * mw,
+    h: (box.height / nh) * mh
+  })
+  const oldM = toMaskRect(oldBox)
+  const newM = toMaskRect(newBox)
+  if (oldM.w <= 0 || oldM.h <= 0 || newM.w <= 0 || newM.h <= 0) {
+    return
+  }
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    return
+  }
+  const snap = document.createElement('canvas')
+  snap.width = mw
+  snap.height = mh
+  const snapCtx = snap.getContext('2d')
+  if (!snapCtx) {
+    return
+  }
+  snapCtx.drawImage(canvas, 0, 0)
+  ctx.fillStyle = '#000000'
+  ctx.fillRect(Math.floor(oldM.x), Math.floor(oldM.y), Math.ceil(oldM.w), Math.ceil(oldM.h))
+  ctx.drawImage(
+    snap,
+    oldM.x, oldM.y, oldM.w, oldM.h,
+    newM.x, newM.y, newM.w, newM.h
+  )
+}
+
+/** Escala máscara/zona de efeito quando a imagem colada é redimensionada no canvas. */
+const scaleCommittedCollageEffectsForOverlayResize = (oldBox, newBox) => {
+  const sx = newBox.width / oldBox.width
+  const sy = newBox.height / oldBox.height
+  const dx = newBox.x - oldBox.x
+  const dy = newBox.y - oldBox.y
+  if (sx === 1 && sy === 1 && !dx && !dy) {
+    return
+  }
+  const el = imageRef.value
+  const nw = el?.naturalWidth || 1
+  const nh = el?.naturalHeight || 1
+
+  if (committedPixelateRegion.value) {
+    committedPixelateRegion.value = transformRegionForOverlayResize(
+      committedPixelateRegion.value,
+      oldBox,
+      newBox
+    )
+  }
+  if (committedBlurRegion.value) {
+    committedBlurRegion.value = transformRegionForOverlayResize(
+      committedBlurRegion.value,
+      oldBox,
+      newBox
+    )
+  }
+  if (committedPixelateMask.value && committedPixelateMaskCanvasCache) {
+    scaleMaskCanvasForOverlayResize(committedPixelateMaskCanvasCache, oldBox, newBox, nw, nh)
+    committedPixelateMask.value = exportBrushMaskCanvas(committedPixelateMaskCanvasCache)
+  }
+  if (committedBlurMask.value && committedBlurMaskCanvasCache) {
+    scaleMaskCanvasForOverlayResize(committedBlurMaskCanvasCache, oldBox, newBox, nw, nh)
+    committedBlurMask.value = exportBrushMaskCanvas(committedBlurMaskCanvasCache)
+  }
+}
+
+const getCanvasNaturalSize = () => {
+  const el = imageRef.value
+  return {
+    w: el?.naturalWidth || 1,
+    h: el?.naturalHeight || 1
+  }
+}
+
+/** Conteúdo do canvas que deve acompanhar rotação/espelho. */
+const shouldTransformCanvasContentOnGeometryEdit = () =>
+  isBlankCanvas.value ||
+  imageOverlays.value.length > 0 ||
+  texts.value.length > 0
+
+/** Rotação 90° CCW (equivalente a Intervention rotate(90)). */
+const rotateNaturalPoint90Ccw = (p, canvasW) => ({
+  x: p.y,
+  y: canvasW - p.x
+})
+
+const rotateNaturalRect90Ccw = (rect, canvasW) => ({
+  x: rect.y,
+  y: canvasW - rect.x - rect.width,
+  width: rect.height,
+  height: rect.width
+})
+
+const flipNaturalPointHorizontal = (p, canvasW) => ({
+  x: canvasW - p.x,
+  y: p.y
+})
+
+const flipNaturalRectHorizontal = (rect, canvasW) => ({
+  x: canvasW - rect.x - rect.width,
+  y: rect.y,
+  width: rect.width,
+  height: rect.height
+})
+
+const flipNaturalPointVertical = (p, canvasH) => ({
+  x: p.x,
+  y: canvasH - p.y
+})
+
+const flipNaturalRectVertical = (rect, canvasH) => ({
+  x: rect.x,
+  y: canvasH - rect.y - rect.height,
+  width: rect.width,
+  height: rect.height
+})
+
+const replaceCanvasBitmap = (target, source) => {
+  target.width = source.width
+  target.height = source.height
+  const ctx = target.getContext('2d')
+  if (ctx) {
+    ctx.drawImage(source, 0, 0)
+  }
+}
+
+const rotateMaskCanvas90Ccw = (canvas) => {
+  const mw = canvas.width
+  const mh = canvas.height
+  if (!mw || !mh) {
+    return
+  }
+  const tmp = document.createElement('canvas')
+  tmp.width = mh
+  tmp.height = mw
+  const ctx = tmp.getContext('2d')
+  if (!ctx) {
+    return
+  }
+  ctx.translate(0, tmp.height)
+  ctx.rotate(-Math.PI / 2)
+  ctx.drawImage(canvas, 0, 0)
+  replaceCanvasBitmap(canvas, tmp)
+}
+
+const flipMaskCanvasHorizontal = (canvas) => {
+  const tmp = document.createElement('canvas')
+  tmp.width = canvas.width
+  tmp.height = canvas.height
+  const ctx = tmp.getContext('2d')
+  if (!ctx) {
+    return
+  }
+  ctx.translate(tmp.width, 0)
+  ctx.scale(-1, 1)
+  ctx.drawImage(canvas, 0, 0)
+  replaceCanvasBitmap(canvas, tmp)
+}
+
+const flipMaskCanvasVertical = (canvas) => {
+  const tmp = document.createElement('canvas')
+  tmp.width = canvas.width
+  tmp.height = canvas.height
+  const ctx = tmp.getContext('2d')
+  if (!ctx) {
+    return
+  }
+  ctx.translate(0, tmp.height)
+  ctx.scale(1, -1)
+  ctx.drawImage(canvas, 0, 0)
+  replaceCanvasBitmap(canvas, tmp)
+}
+
+const transformOverlayDataUrl = (src, { rotate90Ccw = false, flipH = false, flipV = false }) =>
+  new Promise((resolve, reject) => {
+    const img = new window.Image()
+    img.onload = () => {
+      let dw = img.naturalWidth
+      let dh = img.naturalHeight
+      if (!dw || !dh) {
+        resolve(src)
+        return
+      }
+      if (rotate90Ccw) {
+        ;[dw, dh] = [dh, dw]
+      }
+      const c = document.createElement('canvas')
+      c.width = dw
+      c.height = dh
+      const ctx = c.getContext('2d')
+      if (!ctx) {
+        resolve(src)
+        return
+      }
+      ctx.save()
+      if (rotate90Ccw) {
+        ctx.translate(0, dh)
+        ctx.rotate(-Math.PI / 2)
+      } else if (flipH || flipV) {
+        let tx = 0
+        let ty = 0
+        let sx = 1
+        let sy = 1
+        if (flipH) {
+          sx = -1
+          tx = img.naturalWidth
+        }
+        if (flipV) {
+          sy = -1
+          ty = img.naturalHeight
+        }
+        ctx.translate(tx, ty)
+        ctx.scale(sx, sy)
+      }
+      ctx.drawImage(img, 0, 0)
+      ctx.restore()
+      resolve(c.toDataURL('image/jpeg', 0.88))
+    }
+    img.onerror = () => reject(new Error('Falha ao transformar imagem'))
+    img.src = src
+  })
+
+const transformCommittedEffectsRotate90Ccw = (canvasW) => {
+  if (committedPixelateRegion.value) {
+    committedPixelateRegion.value = rotateNaturalRect90Ccw(committedPixelateRegion.value, canvasW)
+  }
+  if (committedBlurRegion.value) {
+    committedBlurRegion.value = rotateNaturalRect90Ccw(committedBlurRegion.value, canvasW)
+  }
+  if (committedPixelateMask.value && committedPixelateMaskCanvasCache) {
+    rotateMaskCanvas90Ccw(committedPixelateMaskCanvasCache)
+    committedPixelateMask.value = exportBrushMaskCanvas(committedPixelateMaskCanvasCache)
+  }
+  if (committedBlurMask.value && committedBlurMaskCanvasCache) {
+    rotateMaskCanvas90Ccw(committedBlurMaskCanvasCache)
+    committedBlurMask.value = exportBrushMaskCanvas(committedBlurMaskCanvasCache)
+  }
+}
+
+const transformCommittedEffectsFlipHorizontal = (canvasW) => {
+  if (committedPixelateRegion.value) {
+    committedPixelateRegion.value = flipNaturalRectHorizontal(committedPixelateRegion.value, canvasW)
+  }
+  if (committedBlurRegion.value) {
+    committedBlurRegion.value = flipNaturalRectHorizontal(committedBlurRegion.value, canvasW)
+  }
+  if (committedPixelateMask.value && committedPixelateMaskCanvasCache) {
+    flipMaskCanvasHorizontal(committedPixelateMaskCanvasCache)
+    committedPixelateMask.value = exportBrushMaskCanvas(committedPixelateMaskCanvasCache)
+  }
+  if (committedBlurMask.value && committedBlurMaskCanvasCache) {
+    flipMaskCanvasHorizontal(committedBlurMaskCanvasCache)
+    committedBlurMask.value = exportBrushMaskCanvas(committedBlurMaskCanvasCache)
+  }
+}
+
+const transformCommittedEffectsFlipVertical = (canvasH) => {
+  if (committedPixelateRegion.value) {
+    committedPixelateRegion.value = flipNaturalRectVertical(committedPixelateRegion.value, canvasH)
+  }
+  if (committedBlurRegion.value) {
+    committedBlurRegion.value = flipNaturalRectVertical(committedBlurRegion.value, canvasH)
+  }
+  if (committedPixelateMask.value && committedPixelateMaskCanvasCache) {
+    flipMaskCanvasVertical(committedPixelateMaskCanvasCache)
+    committedPixelateMask.value = exportBrushMaskCanvas(committedPixelateMaskCanvasCache)
+  }
+  if (committedBlurMask.value && committedBlurMaskCanvasCache) {
+    flipMaskCanvasVertical(committedBlurMaskCanvasCache)
+    committedBlurMask.value = exportBrushMaskCanvas(committedBlurMaskCanvasCache)
+  }
+}
+
+const transformDrawingGeometry = (d, { mapPoint, mapRect, swapEllipseAxes = false }) => {
+  const c = cloneJson(d)
+  const t = c.type
+  if (t === 'line' || t === 'arrow') {
+    const p1 = mapPoint({ x: c.x1, y: c.y1 })
+    const p2 = mapPoint({ x: c.x2, y: c.y2 })
+    c.x1 = Math.round(p1.x)
+    c.y1 = Math.round(p1.y)
+    c.x2 = Math.round(p2.x)
+    c.y2 = Math.round(p2.y)
+  } else if (t === 'rectangle') {
+    const r = mapRect({ x: c.x, y: c.y, width: c.width, height: c.height })
+    c.x = r.x
+    c.y = r.y
+    c.width = r.width
+    c.height = r.height
+  } else if (t === 'ellipse') {
+    const p = mapPoint({ x: c.cx, y: c.cy })
+    c.cx = Math.round(p.x)
+    c.cy = Math.round(p.y)
+    if (swapEllipseAxes) {
+      ;[c.rx, c.ry] = [c.ry, c.rx]
+    }
+  } else if (t === 'circle') {
+    const p = mapPoint({ x: c.cx, y: c.cy })
+    c.cx = Math.round(p.x)
+    c.cy = Math.round(p.y)
+  } else if (
+    (t === 'pen' || t === 'polygon' || t === 'bezier') &&
+    Array.isArray(c.points)
+  ) {
+    c.points = c.points.map((pt) => {
+      const p = mapPoint(pt)
+      return { x: Math.round(p.x), y: Math.round(p.y) }
+    })
+  } else if (t === 'pixel' || t === 'fill') {
+    const p = mapPoint({ x: c.x, y: c.y })
+    c.x = Math.round(p.x)
+    c.y = Math.round(p.y)
+  }
+  return c
+}
+
+const transformDrawingsRotate90Ccw = (canvasW) => {
+  drawings.value = drawings.value.map((d) =>
+    transformDrawingGeometry(d, {
+      mapPoint: (p) => rotateNaturalPoint90Ccw(p, canvasW),
+      mapRect: (r) => rotateNaturalRect90Ccw(r, canvasW),
+      swapEllipseAxes: true
+    })
+  )
+}
+
+const transformDrawingsFlipHorizontal = (canvasW) => {
+  drawings.value = drawings.value.map((d) =>
+    transformDrawingGeometry(d, {
+      mapPoint: (p) => flipNaturalPointHorizontal(p, canvasW),
+      mapRect: (r) => flipNaturalRectHorizontal(r, canvasW)
+    })
+  )
+}
+
+const transformDrawingsFlipVertical = (canvasH) => {
+  drawings.value = drawings.value.map((d) =>
+    transformDrawingGeometry(d, {
+      mapPoint: (p) => flipNaturalPointVertical(p, canvasH),
+      mapRect: (r) => flipNaturalRectVertical(r, canvasH)
+    })
+  )
+}
+
+const transformTextsRotate90Ccw = (canvasW) => {
+  texts.value = texts.value.map((t) => {
+    const angle = Number(t.angle) || 0
+    let x = t.x
+    let y = t.y
+    if (angle === 0) {
+      const box = measureTextItemNaturalBounds(t)
+      const next = rotateNaturalRect90Ccw(box, canvasW)
+      x = next.x
+      y = next.y
+    } else {
+      const p = rotateNaturalPoint90Ccw({ x: t.x, y: t.y }, canvasW)
+      x = Math.round(p.x)
+      y = Math.round(p.y)
+    }
+    return {
+      ...t,
+      x: Math.round(x),
+      y: Math.round(y),
+      angle: (angle + 90) % 360
+    }
+  })
+}
+
+const transformTextsFlipHorizontal = (canvasW) => {
+  texts.value = texts.value.map((t) => {
+    const angle = Number(t.angle) || 0
+    let x = t.x
+    let y = t.y
+    if (angle === 0) {
+      const box = measureTextItemNaturalBounds(t)
+      const next = flipNaturalRectHorizontal(box, canvasW)
+      x = next.x
+      y = next.y
+    } else {
+      x = Math.round(canvasW - t.x)
+    }
+    return {
+      ...t,
+      x: Math.round(x),
+      y: Math.round(y),
+      angle: (360 - angle) % 360
+    }
+  })
+}
+
+const transformTextsFlipVertical = (canvasH) => {
+  texts.value = texts.value.map((t) => {
+    const angle = Number(t.angle) || 0
+    let x = t.x
+    let y = t.y
+    if (angle === 0) {
+      const box = measureTextItemNaturalBounds(t)
+      const next = flipNaturalRectVertical(box, canvasH)
+      x = next.x
+      y = next.y
+    } else {
+      y = Math.round(canvasH - t.y)
+    }
+    return {
+      ...t,
+      x: Math.round(x),
+      y: Math.round(y),
+      angle: (180 - angle + 360) % 360
+    }
+  })
+}
+
+const transformCollageCanvasContentRotate90Ccw = async () => {
+  const { w } = getCanvasNaturalSize()
+  if (imageOverlays.value.length > 0) {
+    imageOverlays.value = await Promise.all(
+      imageOverlays.value.map(async (ov) => {
+        const next = rotateNaturalRect90Ccw(ov, w)
+        return {
+          ...ov,
+          x: next.x,
+          y: next.y,
+          width: next.width,
+          height: next.height,
+          src: await transformOverlayDataUrl(ov.src, { rotate90Ccw: true })
+        }
+      })
+    )
+  }
+  if (isBlankCanvas.value) {
+    transformCommittedEffectsRotate90Ccw(w)
+  }
+  if (texts.value.length > 0) {
+    transformTextsRotate90Ccw(w)
+  }
+  if (isBlankCanvas.value && drawings.value.length > 0) {
+    transformDrawingsRotate90Ccw(w)
+  }
+}
+
+const transformCollageCanvasContentFlipHorizontal = async () => {
+  const { w } = getCanvasNaturalSize()
+  if (imageOverlays.value.length > 0) {
+    imageOverlays.value = await Promise.all(
+      imageOverlays.value.map(async (ov) => {
+        const next = flipNaturalRectHorizontal(ov, w)
+        return {
+          ...ov,
+          x: next.x,
+          y: next.y,
+          src: await transformOverlayDataUrl(ov.src, { flipH: true })
+        }
+      })
+    )
+  }
+  transformCommittedEffectsFlipHorizontal(w)
+  if (texts.value.length > 0) {
+    transformTextsFlipHorizontal(w)
+  }
+  if (isBlankCanvas.value && drawings.value.length > 0) {
+    transformDrawingsFlipHorizontal(w)
+  }
+}
+
+const transformCollageCanvasContentFlipVertical = async () => {
+  const { h } = getCanvasNaturalSize()
+  if (imageOverlays.value.length > 0) {
+    imageOverlays.value = await Promise.all(
+      imageOverlays.value.map(async (ov) => {
+        const next = flipNaturalRectVertical(ov, h)
+        return {
+          ...ov,
+          x: next.x,
+          y: next.y,
+          src: await transformOverlayDataUrl(ov.src, { flipV: true })
+        }
+      })
+    )
+  }
+  transformCommittedEffectsFlipVertical(h)
+  if (texts.value.length > 0) {
+    transformTextsFlipVertical(h)
+  }
+  if (isBlankCanvas.value && drawings.value.length > 0) {
+    transformDrawingsFlipVertical(h)
+  }
+}
+
+/** Desloca máscara/zona de efeito quando a imagem colada se move no canvas. */
+const shiftCommittedCollageEffectsNatural = (dxNat, dyNat) => {
+  const rdx = Math.round(dxNat)
+  const rdy = Math.round(dyNat)
+  if (!rdx && !rdy) {
+    return
+  }
+  const el = imageRef.value
+  const nw = el?.naturalWidth || 1
+  const nh = el?.naturalHeight || 1
+
+  if (committedPixelateRegion.value) {
+    committedPixelateRegion.value = {
+      ...committedPixelateRegion.value,
+      x: committedPixelateRegion.value.x + rdx,
+      y: committedPixelateRegion.value.y + rdy
+    }
+  }
+  if (committedBlurRegion.value) {
+    committedBlurRegion.value = {
+      ...committedBlurRegion.value,
+      x: committedBlurRegion.value.x + rdx,
+      y: committedBlurRegion.value.y + rdy
+    }
+  }
+  if (committedPixelateMask.value && committedPixelateMaskCanvasCache) {
+    shiftMaskCanvasByNaturalDelta(committedPixelateMaskCanvasCache, rdx, rdy, nw, nh)
+    committedPixelateMask.value = exportBrushMaskCanvas(committedPixelateMaskCanvasCache)
+  }
+  if (committedBlurMask.value && committedBlurMaskCanvasCache) {
+    shiftMaskCanvasByNaturalDelta(committedBlurMaskCanvasCache, rdx, rdy, nw, nh)
+    committedBlurMask.value = exportBrushMaskCanvas(committedBlurMaskCanvasCache)
+  }
+}
+
 const commitPixelateBrushMaskIfDirty = () => {
   if (!pixelateMaskDirty.value || !pixelateBrushCanvas) {
     return
@@ -4185,6 +5069,7 @@ const commitPixelateBrushMaskIfDirty = () => {
   const dataUrl = exportBrushMaskCanvas(pixelateBrushCanvas)
   if (dataUrl) {
     committedPixelateMask.value = dataUrl
+    syncPixelateMaskCacheFromBrush()
   }
 }
 
@@ -4195,6 +5080,7 @@ const commitBlurBrushMaskIfDirty = () => {
   const dataUrl = exportBrushMaskCanvas(blurBrushCanvas)
   if (dataUrl) {
     committedBlurMask.value = dataUrl
+    syncBlurMaskCacheFromBrush()
   }
 }
 
@@ -4324,47 +5210,65 @@ const toggleControl = (control) => {
   }
 }
 
-const toggleFlip = (direction) => {
+const toggleFlip = async (direction) => {
   closeDrawingMenu()
   commitPendingEffectEdits()
-  if (direction === 'horizontal') {
-    flipHorizontal.value = !flipHorizontal.value
-  } else {
-    flipVertical.value = !flipVertical.value
-  }
-  applyChanges()
+  const cssTransform = direction === 'horizontal' ? 'scaleX(-1)' : 'scaleY(-1)'
+  await runWithGeometryAnimation(cssTransform, async ({ animated }) => {
+    if (shouldTransformCanvasContentOnGeometryEdit()) {
+      if (direction === 'horizontal') {
+        await transformCollageCanvasContentFlipHorizontal()
+        flipHorizontal.value = !flipHorizontal.value
+      } else {
+        await transformCollageCanvasContentFlipVertical()
+        flipVertical.value = !flipVertical.value
+      }
+    } else if (direction === 'horizontal') {
+      flipHorizontal.value = !flipHorizontal.value
+    } else {
+      flipVertical.value = !flipVertical.value
+    }
+    await applyChanges({ commitGeometryPreview: animated })
+  })
 }
 
-const rotateImage = () => {
+const rotateImage = async () => {
   closeDrawingMenu()
   commitPendingEffectEdits()
-  rotation.value = (rotation.value + 90) % 360
-  if (showCrop.value && cropNatural.value.width > 0) {
-    rotateCropNatural90Cw()
-    scheduleCropDisplaySync()
-    applyChanges({ crop: null })
-    return
-  }
-  if (committedCrop.value) {
-    cropNatural.value = { ...committedCrop.value }
-    rotateCropNatural90Cw()
-    committedCrop.value = { ...cropNatural.value }
-    applyChanges({ crop: committedCrop.value })
-    return
-  }
-  if (showCrop.value) {
-    refreshCropReferenceSizeFromImage()
-    initCropNaturalFull()
-    scheduleCropDisplaySync()
-    applyChanges({ crop: null })
-    return
-  }
-  applyChanges()
+  await runWithGeometryAnimation('rotate(-90deg)', async ({ animated }) => {
+    if (shouldTransformCanvasContentOnGeometryEdit()) {
+      await transformCollageCanvasContentRotate90Ccw()
+    }
+    rotation.value = (rotation.value + 90) % 360
+    if (showCrop.value && cropNatural.value.width > 0) {
+      rotateCropNatural90Cw()
+      scheduleCropDisplaySync()
+      await applyChanges({ crop: null, commitGeometryPreview: animated })
+      return
+    }
+    if (committedCrop.value) {
+      cropNatural.value = { ...committedCrop.value }
+      rotateCropNatural90Cw()
+      committedCrop.value = { ...cropNatural.value }
+      await applyChanges({ crop: committedCrop.value, commitGeometryPreview: animated })
+      return
+    }
+    if (showCrop.value) {
+      refreshCropReferenceSizeFromImage()
+      initCropNaturalFull()
+      scheduleCropDisplaySync()
+      await applyChanges({ crop: null, commitGeometryPreview: animated })
+      return
+    }
+    await applyChanges({ commitGeometryPreview: animated })
+  })
 }
 
 const startMovingText = (e, index) => {
   if (drawingTool.value) return
   if (showCrop.value || showBlurRegion.value || showPixelateRegion.value) return
+  if (resizingTextIndex.value !== null) return
+  if (areaStampMode.value === 'copy') return
 
   e.preventDefault()
   e.stopPropagation()
@@ -4423,7 +5327,174 @@ const stopMovingText = () => {
   movingTextIndex.value = null
 }
 
+const clampTextScale = (scale) => Math.max(0.15, Math.min(8, scale))
+
+const applyTextScale = (text, scale, start) => {
+  const newSize = Math.max(6, Math.min(900, Math.round(start.size0 * scale)))
+  const next = {
+    ...text,
+    size: newSize
+  }
+  if (start.strokeWidth0 > 0) {
+    next.stroke_width = Math.max(1, Math.min(12, Math.round(start.strokeWidth0 * scale)))
+  }
+  if (start.bgPadding0 > 0) {
+    next.background_padding = Math.max(0, Math.min(48, Math.round(start.bgPadding0 * scale)))
+  }
+  if (start.boxWidth0 > 0) {
+    next.box_width = Math.max(24, Math.round(start.boxWidth0 * scale))
+  }
+  return next
+}
+
+const startTextResize = (e, index, handle) => {
+  if (drawingTool.value || showCrop.value || showBlurRegion.value || showPixelateRegion.value) {
+    return
+  }
+  stopMovingText()
+  stopTextResize()
+  e.preventDefault()
+  e.stopPropagation()
+  selectText(index)
+  const t = texts.value[index]
+  if (!t) {
+    return
+  }
+  const box = measureTextItemDisplayBox(t)
+  const rect = imageRef.value.getBoundingClientRect()
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY
+  textResizeStart.value = {
+    index,
+    handle,
+    size0: t.size ?? 24,
+    boxWidth0: t.box_width && t.box_width > 0 ? t.box_width : 0,
+    strokeWidth0: t.stroke_width ?? 0,
+    bgPadding0: t.background_padding ?? 0,
+    box0: box,
+    x0: t.x,
+    y0: t.y,
+    px0: clientX - rect.left,
+    py0: clientY - rect.top
+  }
+  resizingTextIndex.value = index
+  window.addEventListener('mousemove', onTextResizeMove)
+  window.addEventListener('mouseup', stopTextResize)
+  window.addEventListener('touchmove', onTextResizeMove, { passive: false })
+  window.addEventListener('touchend', stopTextResize)
+}
+
+const onTextResizeMove = (e) => {
+  const st = textResizeStart.value
+  if (st === null || resizingTextIndex.value === null) {
+    return
+  }
+  if (e.type === 'touchmove' && e.cancelable) {
+    e.preventDefault()
+  }
+  const t = texts.value[st.index]
+  if (!t) {
+    return
+  }
+  const rect = imageRef.value.getBoundingClientRect()
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY
+  const px = clientX - rect.left
+  const py = clientY - rect.top
+  const box0 = st.box0
+  const minDisp = 20
+
+  if (st.handle === 'e' || st.handle === 'w') {
+    let newLeft = box0.left
+    let newWidth = box0.width
+    if (st.handle === 'e') {
+      newWidth = Math.max(minDisp, px - box0.left)
+    } else {
+      newLeft = Math.min(px, box0.left + box0.width - minDisp)
+      newWidth = box0.left + box0.width - newLeft
+    }
+    const next = {
+      ...t,
+      box_width: Math.max(24, displayTextSizeToNatural(Math.round(newWidth)))
+    }
+    if (st.handle === 'w') {
+      const nat = displayPointToNatural(Math.round(newLeft), Math.round(box0.top))
+      next.x = nat.x
+      next.y = nat.y
+    }
+    texts.value[st.index] = next
+    scheduleApplyChanges()
+    return
+  }
+
+  let newLeft = box0.left
+  let newTop = box0.top
+  let newWidth = box0.width
+  let newHeight = box0.height
+
+  switch (st.handle) {
+    case 'se':
+      newWidth = Math.max(minDisp, px - box0.left)
+      newHeight = Math.max(minDisp, py - box0.top)
+      break
+    case 'sw':
+      newLeft = Math.min(px, box0.left + box0.width - minDisp)
+      newWidth = box0.left + box0.width - newLeft
+      newHeight = Math.max(minDisp, py - box0.top)
+      break
+    case 'ne':
+      newWidth = Math.max(minDisp, px - box0.left)
+      newTop = Math.min(py, box0.top + box0.height - minDisp)
+      newHeight = box0.top + box0.height - newTop
+      break
+    case 'nw':
+      newLeft = Math.min(px, box0.left + box0.width - minDisp)
+      newTop = Math.min(py, box0.top + box0.height - minDisp)
+      newWidth = box0.left + box0.width - newLeft
+      newHeight = box0.top + box0.height - newTop
+      break
+    default:
+      return
+  }
+
+  const scale = clampTextScale((newWidth / box0.width + newHeight / box0.height) / 2)
+  let next = applyTextScale(t, scale, st)
+  if (st.handle !== 'se') {
+    const nat = displayPointToNatural(Math.round(newLeft), Math.round(newTop))
+    next.x = nat.x
+    next.y = nat.y
+  }
+  texts.value[st.index] = next
+  if (selectedTextIndex.value === st.index) {
+    textSize.value = naturalTextSizeToDisplay(next.size ?? 24)
+    if (next.stroke_width > 0) {
+      textStrokeWidth.value = naturalTextSizeToDisplay(next.stroke_width)
+    }
+    if (next.background_padding > 0) {
+      textBgPadding.value = naturalTextPaddingToDisplay(next.background_padding)
+    }
+  }
+  scheduleApplyChanges()
+}
+
+const stopTextResize = () => {
+  window.removeEventListener('mousemove', onTextResizeMove)
+  window.removeEventListener('mouseup', stopTextResize)
+  window.removeEventListener('touchmove', onTextResizeMove)
+  window.removeEventListener('touchend', stopTextResize)
+  if (resizingTextIndex.value !== null) {
+    flushPreview()
+    recordEditHistory()
+  }
+  resizingTextIndex.value = null
+  textResizeStart.value = null
+}
+
 const removeText = (index) => {
+  const removed = texts.value[index]
+  if (removed?.id) {
+    removeCanvasLayer('text', removed.id)
+  }
   texts.value.splice(index, 1)
   if (selectedTextIndex.value === index) {
     selectedTextIndex.value = null
@@ -4606,6 +5677,11 @@ const getControlValue = (control) => {
 }
 
 const updateControlValue = (value) => {
+  if (activeControl.value === 'blur') {
+    ensureBlurEffectStrength()
+  } else if (activeControl.value === 'pixelate') {
+    ensurePixelateEffectStrength()
+  }
   const control = getControlValue(activeControl.value)
   control.value = parseInt(value)
   if (['brightness', 'contrast', 'saturation', 'gamma', 'sharpen'].includes(activeControl.value)) {
@@ -4705,6 +5781,21 @@ const displayPointToNatural = (px, py) => {
   return { x: r.x, y: r.y }
 }
 
+const draftPointToStored = (pt) =>
+  displayPointToNatural(Math.round(pt.x), Math.round(pt.y))
+
+const draftRectToStored = (left, top, w, h) =>
+  displayRectToNatural(left, top, w, h)
+
+const drawingPointerForEvent = (e) => {
+  const draft = clientToImgLocal(e)
+  return { draft, stored: draftPointToStored(draft) }
+}
+
+const pushActiveDrawing = (shape) => {
+  drawings.value.push(shape)
+}
+
 const committedRegionToDisplayRect = (natural) => {
   if (!natural?.width || !natural?.height) {
     return null
@@ -4778,7 +5869,6 @@ const exitPixelateRectangleUi = () => {
 }
 
 const openBlurRectangleEditor = () => {
-  ensureBlurEffectStrength()
   closeDrawingMenu()
   cancelCropPanPreviewRaf()
   stopCropPan()
@@ -4801,7 +5891,6 @@ const openBlurRectangleEditor = () => {
 }
 
 const openPixelateRectangleEditor = () => {
-  ensurePixelateEffectStrength()
   closeDrawingMenu()
   cancelCropPanPreviewRaf()
   stopCropPan()
@@ -4878,6 +5967,45 @@ const resolveActiveBlurLevel = () =>
 
 const resolveActivePixelateLevel = () =>
   pixelate.value > 0 && hasActivePixelateTarget() ? pixelate.value : 0
+
+/** Efeito local activo na folha em branco (inclui máscara/zona já confirmada). */
+const collageHasLocalEffects = computed(
+  () =>
+    isCollageComposition.value &&
+    (resolveActiveBlurLevel() > 0 || resolveActivePixelateLevel() > 0)
+)
+
+/** Brilho, contraste, filtros, etc. — também devem compor sobre as imagens coladas. */
+const collageHasGlobalAdjustments = computed(() => {
+  if (!isCollageComposition.value) {
+    return false
+  }
+
+  return (
+    activeFilterPreset.value !== null ||
+    brightness.value !== 0 ||
+    contrast.value !== 0 ||
+    saturation.value !== 0 ||
+    gamma.value !== 0 ||
+    gammaFine.value !== 0 ||
+    sharpen.value !== 0
+  )
+})
+
+/** Na folha em branco, compõe overlays no servidor quando há ajustes globais ou efeitos locais. */
+const shouldComposeCollageOverlaysInPreview = computed(
+  () => collageHasLocalEffects.value || collageHasGlobalAdjustments.value
+)
+
+/** Oculta overlays DOM só durante edição activa de desfoque/pixelização. */
+const shouldHideDomImageOverlays = computed(
+  () => collageHasLocalEffects.value && isEffectRegionToolActive.value
+)
+
+/** Pré-visualização composta: overlays invisíveis mas arrastáveis (filtros ou efeitos locais fechados). */
+const collageOverlayGhostMove = computed(
+  () => shouldComposeCollageOverlaysInPreview.value && !isEffectRegionToolActive.value
+)
 
 const resolveBlurRegionPayload = () => {
   if (resolveActiveBlurLevel() <= 0 || blurApplyGlobal.value) {
@@ -5401,6 +6529,7 @@ const startDrawingMove = (e, index) => {
   e.preventDefault()
   e.stopPropagation()
   selectedDrawingIndex.value = index
+  syncDrawingStyleFromDrawing(drawings.value[index])
   drawingMoveSnapshot.value = cloneJson(drawings.value[index])
   const p = clientToImgLocal(e)
   drawingMoveStartNat.value = displayPointToNatural(p.x, p.y)
@@ -5417,7 +6546,7 @@ const buildDrawingOverlayShapes = (list, mapPoint, strokeScale) => {
     if (!d || !d.type) {
       continue
     }
-    const stroke = d.strokeColor || '#000000'
+    const stroke = d.strokeColor || d.color || '#000000'
     const strokeWidth = Math.max(1, (d.strokeWidth || 2) * strokeScale)
     const fillProps = drawingFillDisplay(d)
     const t = d.type
@@ -5549,18 +6678,6 @@ const drawingOverlayShapes = computed(() => {
   )
 })
 
-const layoutDrawingOverlayShapes = computed(() => {
-  zoomLayout.value
-  if (!showLayoutDrawingsOverlay.value) {
-    return []
-  }
-  return buildDrawingOverlayShapes(
-    layoutDrawings.value,
-    (x, y) => ({ x, y }),
-    1
-  )
-})
-
 const naturalRectToDisplay = (nx, ny, nw, nh) => {
   const el = imageRef.value
   if (!el || !el.naturalWidth) {
@@ -5594,8 +6711,17 @@ const naturalTextToDisplayLayout = (text) => {
 }
 
 
-const buildTextItemFromPanel = (content, x, y) => ({
-  content,
+const normalizeTextContent = (raw) => {
+  if (typeof raw !== 'string') {
+    return ''
+  }
+
+  return raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+}
+
+const buildTextItemFromPanel = (content, x, y, existing = null) => ({
+  id: existing?.id ?? createTextId(),
+  content: normalizeTextContent(content),
   x,
   y,
   size: displayTextSizeToNatural(textSize.value),
@@ -5609,7 +6735,8 @@ const buildTextItemFromPanel = (content, x, y) => ({
   stroke_color: textStrokeEnabled.value ? textStrokeColor.value : null,
   background_color: textBgEnabled.value ? textBgColor.value : null,
   background_opacity: textBgEnabled.value ? textBgOpacity.value : null,
-  background_padding: textBgEnabled.value ? displayTextPaddingToNatural(textBgPadding.value) : 0
+  background_padding: textBgEnabled.value ? displayTextPaddingToNatural(textBgPadding.value) : 0,
+  ...(existing?.box_width ? { box_width: existing.box_width } : {})
 })
 
 const loadTextSettingsFromItem = (t) => {
@@ -5634,7 +6761,7 @@ const syncSelectedTextFromPanel = () => {
   if (i === null || !texts.value[i]) {
     return
   }
-  texts.value[i] = buildTextItemFromPanel(textContent.value, texts.value[i].x, texts.value[i].y)
+  texts.value[i] = buildTextItemFromPanel(textContent.value, texts.value[i].x, texts.value[i].y, texts.value[i])
 }
 
 const onTextPanelInput = () => {
@@ -5652,11 +6779,14 @@ const duplicateSelectedText = () => {
     return
   }
   const src = texts.value[i]
+  const newId = createTextId()
   texts.value.push({
     ...src,
+    id: newId,
     x: src.x + Math.max(12, Math.round((src.size || 24) * 0.25)),
     y: src.y + Math.max(12, Math.round((src.size || 24) * 0.25))
   })
+  pushCanvasLayer('text', newId)
   selectedTextIndex.value = texts.value.length - 1
   loadTextSettingsFromItem(texts.value[selectedTextIndex.value])
   recordEditHistory()
@@ -5679,14 +6809,109 @@ const hexToRgba = (hex, alpha) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+let textMeasureCanvas = null
+
+const getTextMeasureCtx = () => {
+  if (!textMeasureCanvas) {
+    textMeasureCanvas = document.createElement('canvas')
+  }
+  return textMeasureCanvas.getContext('2d')
+}
+
+const textMeasureFont = (fontSize, bold) =>
+  `${bold ? '700' : '400'} ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`
+
+const wrapTextLineToWidth = (line, maxWidthPx, ctx) => {
+  if (!line.trim()) {
+    return ['']
+  }
+  const words = line.split(/\s+/)
+  const lines = []
+  let current = ''
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word
+    if (ctx.measureText(candidate).width <= maxWidthPx) {
+      current = candidate
+    } else {
+      if (current) {
+        lines.push(current)
+      }
+      current = word
+    }
+  }
+  if (current) {
+    lines.push(current)
+  }
+  return lines.length ? lines : ['']
+}
+
+const wrapTextContentForDisplay = (content, maxWidthPx, fontSize, bold) => {
+  const ctx = getTextMeasureCtx()
+  ctx.font = textMeasureFont(fontSize, bold)
+  const paragraphs = String(content || '').split('\n')
+  const result = []
+  for (const paragraph of paragraphs) {
+    if (paragraph === '') {
+      result.push('')
+      continue
+    }
+    result.push(...wrapTextLineToWidth(paragraph, maxWidthPx, ctx))
+  }
+  return result
+}
+
+const measureTextItemDisplayBox = (text) => {
+  const lay = naturalTextToDisplayLayout(text)
+  const fontSize = lay.fontSize
+  const ctx = getTextMeasureCtx()
+  ctx.font = textMeasureFont(fontSize, !!text.bold)
+  const lineHeight = fontSize * 1.25
+  const boxWidthDisp =
+    text.box_width && text.box_width > 0 ? naturalTextSizeToDisplay(text.box_width) : 0
+
+  if (boxWidthDisp > 0) {
+    const lines = wrapTextContentForDisplay(text.content, boxWidthDisp, fontSize, !!text.bold)
+    return {
+      left: lay.left,
+      top: lay.top,
+      width: boxWidthDisp,
+      height: Math.max(lineHeight, lines.length * lineHeight)
+    }
+  }
+
+  const lines = String(text.content || '').split('\n')
+  let width = 0
+  for (const line of lines) {
+    width = Math.max(width, ctx.measureText(line || ' ').width)
+  }
+  return {
+    left: lay.left,
+    top: lay.top,
+    width: Math.max(1, width),
+    height: Math.max(lineHeight, lines.length * lineHeight)
+  }
+}
+
+const measureTextItemNaturalBounds = (text) => {
+  void imageNaturalVersion.value
+  const d = measureTextItemDisplayBox(text)
+  return displayRectToNatural(d.left, d.top, d.width, d.height)
+}
+
 const textItemInnerStyle = (text) => {
   const lay = naturalTextToDisplayLayout(text)
+  const boxWidthDisp =
+    text.box_width && text.box_width > 0 ? naturalTextSizeToDisplay(text.box_width) : 0
   const style = {
     fontSize: `${lay.fontSize}px`,
     color: text.color,
     fontWeight: text.bold ? '700' : '400',
     textAlign: text.align || 'left',
     lineHeight: 1.25,
+    whiteSpace: boxWidthDisp > 0 ? 'pre-wrap' : 'pre',
+    wordBreak: boxWidthDisp > 0 ? 'break-word' : 'normal',
+    overflowWrap: boxWidthDisp > 0 ? 'break-word' : 'normal',
+    maxWidth: boxWidthDisp > 0 ? `${boxWidthDisp}px` : 'none',
     fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif'
   }
   const angle = text.angle ?? 0
@@ -5738,6 +6963,7 @@ const naturalTextSizeToDisplay = (naturalPx) => {
 }
 
 const overlayBoxStyle = (ov) => {
+  void imageNaturalVersion.value
   const d = naturalRectToDisplay(ov.x, ov.y, ov.width, ov.height)
   return {
     left: `${d.left}px`,
@@ -5746,6 +6972,109 @@ const overlayBoxStyle = (ov) => {
     height: `${d.height}px`
   }
 }
+
+const createTextId = () =>
+  `text-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+const ensureTextIds = () => {
+  texts.value = texts.value.map((t) => (t.id ? t : { ...t, id: createTextId() }))
+}
+
+const layerStackIndex = (kind, ref) =>
+  canvasLayerStack.value.findIndex((layer) => layer.kind === kind && layer.ref === ref)
+
+const layerStackZIndex = (kind, ref) => {
+  const idx = layerStackIndex(kind, ref)
+  return idx >= 0 ? CANVAS_LAYER_Z_BASE + idx : CANVAS_LAYER_Z_BASE
+}
+
+const pushCanvasLayer = (kind, ref) => {
+  removeCanvasLayer(kind, ref)
+  canvasLayerStack.value = [...canvasLayerStack.value, { kind, ref }]
+}
+
+const removeCanvasLayer = (kind, ref) => {
+  canvasLayerStack.value = canvasLayerStack.value.filter(
+    (layer) => !(layer.kind === kind && layer.ref === ref)
+  )
+}
+
+const pruneCanvasLayerStack = () => {
+  canvasLayerStack.value = canvasLayerStack.value.filter((layer) => {
+    if (layer.kind === 'text') {
+      return texts.value.some((t) => t.id === layer.ref)
+    }
+    if (layer.kind === 'overlay') {
+      return imageOverlays.value.some((o) => o.id === layer.ref)
+    }
+    return false
+  })
+}
+
+const rebuildCanvasLayerStackFromLayers = () => {
+  ensureTextIds()
+  const stack = []
+  for (const t of texts.value) {
+    stack.push({ kind: 'text', ref: t.id })
+  }
+  for (const ov of imageOverlays.value) {
+    stack.push({ kind: 'overlay', ref: ov.id })
+  }
+  canvasLayerStack.value = stack
+}
+
+const layerCanMoveForward = (kind, ref) => {
+  const idx = layerStackIndex(kind, ref)
+  return idx >= 0 && idx < canvasLayerStack.value.length - 1
+}
+
+const layerCanMoveBackward = (kind, ref) => {
+  const idx = layerStackIndex(kind, ref)
+  return idx > 0
+}
+
+const reorderCanvasLayer = (kind, ref, action) => {
+  const stack = [...canvasLayerStack.value]
+  const idx = layerStackIndex(kind, ref)
+  if (idx < 0) {
+    return false
+  }
+  let newIdx = idx
+  if (action === 'front') {
+    newIdx = stack.length - 1
+  } else if (action === 'back') {
+    newIdx = 0
+  } else if (action === 'forward') {
+    newIdx = Math.min(idx + 1, stack.length - 1)
+  } else if (action === 'backward') {
+    newIdx = Math.max(idx - 1, 0)
+  }
+  if (newIdx === idx) {
+    return false
+  }
+  const [item] = stack.splice(idx, 1)
+  stack.splice(newIdx, 0, item)
+  canvasLayerStack.value = stack
+  return true
+}
+
+const overlayLayerStyle = (ov) => ({
+  ...overlayBoxStyle(ov),
+  zIndex: layerStackZIndex('overlay', ov.id)
+})
+
+const textLayerStyle = (text) => ({
+  ...textItemOuterStyle(text),
+  zIndex: layerStackZIndex('text', text.id)
+})
+
+const overlaysPassthroughForTextTool = computed(
+  () =>
+    activeControl.value === 'text' &&
+    !drawingTool.value &&
+    !showDrawingMenu.value &&
+    !isEffectRegionToolActive.value
+)
 
 const imageDisplayScale = () => {
   const el = imageRef.value
@@ -5804,10 +7133,10 @@ const wrapCaptionTextToWidth = (text, fontSize, maxWidth) => {
 }
 
 const captionFontSizeNatural = () =>
-  displayTextSizeToNatural(captionSettings.value.fontSize)
+  Math.max(8, Math.min(120, Math.round(displayTextSizeToNatural(captionSettings.value.fontSize))))
 
 const captionBandPaddingNatural = () =>
-  displayTextSizeToNatural(captionSettings.value.bandPadding)
+  Math.max(4, Math.min(80, Math.round(displayTextSizeToNatural(captionSettings.value.bandPadding))))
 
 const estimateCaptionBandHeightNat = (number, description, widthNat) => {
   if (!widthNat || widthNat < 2) {
@@ -5850,7 +7179,7 @@ const photoCaptionBandStyle = computed(() => {
 const photoCaptionTextStyle = computed(() => {
   void imageNaturalVersion.value
   return {
-    fontSize: `${Math.max(9, captionSettings.value.fontSize)}px`,
+    fontSize: `${Math.max(9, naturalTextSizeToDisplay(captionFontSizeNatural()))}px`,
     color: captionSettings.value.color,
     fontWeight: captionSettings.value.bold ? '700' : '400',
     lineHeight: 1.3
@@ -5862,8 +7191,8 @@ const hasActiveCaptions = computed(() => photoCaptionApplied.value !== null)
 const buildCaptionSettingsPayload = () => ({
   prefix: captionSettings.value.prefix || '',
   separator: captionSettings.value.separator || ' — ',
-  font_size: Math.round(captionFontSizeNatural()),
-  band_padding: Math.round(captionBandPaddingNatural()),
+  font_size: captionFontSizeNatural(),
+  band_padding: captionBandPaddingNatural(),
   color: captionSettings.value.color,
   bold: Boolean(captionSettings.value.bold)
 })
@@ -5989,9 +7318,6 @@ const shrinkDataUrlForOverlay = (dataUrl, maxSide = 1200) => {
 }
 
 const addImageOverlayFromDataUrl = (src) => {
-  if (!isBlankCanvas.value) {
-    return false
-  }
   const el = imageRef.value
   if (!el || !el.naturalWidth || imageOverlays.value.length >= 20) {
     return
@@ -6009,10 +7335,11 @@ const addImageOverlayFromDataUrl = (src) => {
       return
     }
     const ar = iw0 / ih0
-    let nw = Math.round(iw * 0.35)
+    const dropMaxFraction = 0.45
+    let nw = Math.round(iw * dropMaxFraction)
     let nh = Math.round(nw / ar)
-    if (nh > ih * 0.35) {
-      nh = Math.round(ih * 0.35)
+    if (nh > ih * dropMaxFraction) {
+      nh = Math.round(ih * dropMaxFraction)
       nw = Math.round(nh * ar)
     }
     nw = Math.max(8, Math.min(nw, iw))
@@ -6026,24 +7353,23 @@ const addImageOverlayFromDataUrl = (src) => {
       ih - nh,
       Math.max(0, Math.round((ih - nh) / 2) + Math.floor(stack / 5) * 28)
     )
+    const overlayId = `ov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     imageOverlays.value.push({
-      id: `ov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: overlayId,
       src,
       x: nx,
       y: ny,
       width: nw,
       height: nh
     })
-    selectedOverlayId.value = imageOverlays.value[imageOverlays.value.length - 1].id
+    pushCanvasLayer('overlay', overlayId)
+    selectedOverlayId.value = overlayId
     scheduleApplyChanges()
   }
   img.src = src
 }
 
 const addImageOverlayFromUrl = async (url) => {
-  if (!isBlankCanvas.value) {
-    return false
-  }
   if (!url || typeof url !== 'string') {
     return false
   }
@@ -6071,11 +7397,139 @@ const addImageOverlayFromUrl = async (url) => {
 
 const removeImageOverlay = (id) => {
   imageOverlays.value = imageOverlays.value.filter((o) => o.id !== id)
+  removeCanvasLayer('overlay', id)
   if (selectedOverlayId.value === id) {
     selectedOverlayId.value = imageOverlays.value[0]?.id ?? null
   }
+  if (overlayContextMenu.value?.overlayId === id) {
+    closeOverlayContextMenu()
+  }
   scheduleApplyChanges()
 }
+
+const overlayIndexById = (id) => imageOverlays.value.findIndex((o) => o.id === id)
+
+const textIndexById = (id) => texts.value.findIndex((t) => t.id === id)
+
+const overlayCanMoveForward = (id) => layerCanMoveForward('overlay', id)
+
+const overlayCanMoveBackward = (id) => layerCanMoveBackward('overlay', id)
+
+const closeOverlayContextMenu = () => {
+  overlayContextMenu.value = null
+}
+
+const closeTextContextMenu = () => {
+  textContextMenu.value = null
+}
+
+const closeLayerContextMenus = () => {
+  closeOverlayContextMenu()
+  closeTextContextMenu()
+}
+
+const onOverlayContextMenu = (e, id) => {
+  if (!canMoveImageOverlays.value || canvasLayerStack.value.length < 2) {
+    return
+  }
+  closeTextContextMenu()
+  selectedOverlayId.value = id
+  overlayContextMenu.value = {
+    overlayId: id,
+    x: e.clientX,
+    y: e.clientY
+  }
+}
+
+const onTextContextMenu = (e, textId) => {
+  if (!textId || canvasLayerStack.value.length < 2) {
+    return
+  }
+  closeOverlayContextMenu()
+  const index = textIndexById(textId)
+  if (index < 0) {
+    return
+  }
+  selectedTextIndex.value = index
+  loadTextSettingsFromItem(texts.value[index])
+  textContextMenu.value = {
+    textId,
+    x: e.clientX,
+    y: e.clientY
+  }
+}
+
+const reorderOverlay = (id, action) => {
+  if (!reorderCanvasLayer('overlay', id, action)) {
+    closeOverlayContextMenu()
+    return
+  }
+  selectedOverlayId.value = id
+  closeOverlayContextMenu()
+  scheduleApplyChanges()
+  recordEditHistory()
+}
+
+const reorderText = (textId, action) => {
+  if (!reorderCanvasLayer('text', textId, action)) {
+    closeTextContextMenu()
+    return
+  }
+  const index = textIndexById(textId)
+  if (index >= 0) {
+    selectedTextIndex.value = index
+  }
+  closeTextContextMenu()
+  recordEditHistory()
+}
+
+const onLayerContextMenuDismiss = (e) => {
+  if (!overlayContextMenu.value && !textContextMenu.value) {
+    return
+  }
+  if (e.type === 'keydown') {
+    if (e.key !== 'Escape') {
+      return
+    }
+  } else if (e.type === 'mousedown' && e.button === 2) {
+    return
+  }
+  closeLayerContextMenus()
+}
+
+const overlayContextMenuStyle = computed(() => {
+  const menu = overlayContextMenu.value
+  if (!menu) {
+    return {}
+  }
+  const margin = 8
+  const menuW = 192
+  const menuH = 168
+  let x = menu.x
+  let y = menu.y
+  if (typeof window !== 'undefined') {
+    x = Math.min(Math.max(margin, x), window.innerWidth - menuW - margin)
+    y = Math.min(Math.max(margin, y), window.innerHeight - menuH - margin)
+  }
+  return { left: `${x}px`, top: `${y}px` }
+})
+
+const textContextMenuStyle = computed(() => {
+  const menu = textContextMenu.value
+  if (!menu) {
+    return {}
+  }
+  const margin = 8
+  const menuW = 192
+  const menuH = 168
+  let x = menu.x
+  let y = menu.y
+  if (typeof window !== 'undefined') {
+    x = Math.min(Math.max(margin, x), window.innerWidth - menuW - margin)
+    y = Math.min(Math.max(margin, y), window.innerHeight - menuH - margin)
+  }
+  return { left: `${x}px`, top: `${y}px` }
+})
 
 const stopOverlayMove = () => {
   window.removeEventListener('mousemove', onOverlayWindowMove)
@@ -6109,13 +7563,23 @@ const onOverlayWindowMove = (e) => {
   let ny = n.y - overlayMoveGrabNat.value.y
   nx = Math.max(0, Math.min(el.naturalWidth - ov.width, nx))
   ny = Math.max(0, Math.min(el.naturalHeight - ov.height, ny))
-  ov.x = nx
-  ov.y = ny
-  scheduleApplyChanges()
+  const dx = nx - ov.x
+  const dy = ny - ov.y
+  if (dx !== 0 || dy !== 0) {
+    if (collageOverlayGhostMove.value) {
+      shiftCommittedCollageEffectsNatural(dx, dy)
+    }
+    ov.x = nx
+    ov.y = ny
+    scheduleApplyChanges()
+  }
 }
 
 const startOverlayMove = (e, id) => {
-  if (drawingTool.value || showCrop.value || showBlurRegion.value || showPixelateRegion.value || zoomLayout.value) {
+  if (drawingTool.value || showCrop.value || showBlurRegion.value || showPixelateRegion.value) {
+    return
+  }
+  if (!canMoveImageOverlays.value) {
     return
   }
   stopOverlayMove()
@@ -6171,13 +7635,21 @@ const onOverlayResizeMove = (e) => {
   let nh = Math.max(8, st.h0 + (n.y - st.my0))
   nw = Math.min(nw, el.naturalWidth - ov.x)
   nh = Math.min(nh, el.naturalHeight - ov.y)
+  const prevW = ov.width
+  const prevH = ov.height
+  if (collageOverlayGhostMove.value && (nw !== prevW || nh !== prevH)) {
+    scaleCommittedCollageEffectsForOverlayResize(
+      { x: ov.x, y: ov.y, width: prevW, height: prevH },
+      { x: ov.x, y: ov.y, width: nw, height: nh }
+    )
+  }
   ov.width = nw
   ov.height = nh
   scheduleApplyChanges()
 }
 
 const startOverlayResize = (e, id) => {
-  if (drawingTool.value || showCrop.value || showBlurRegion.value || showPixelateRegion.value || zoomLayout.value) {
+  if (drawingTool.value || showCrop.value || showBlurRegion.value || showPixelateRegion.value) {
     return
   }
   stopOverlayMove()
@@ -6198,312 +7670,85 @@ const startOverlayResize = (e, id) => {
   window.addEventListener('touchend', stopOverlayResize)
 }
 
-const zoomCalloutBoxStyle = (callout) => {
-  const m = layoutBoardMetrics.value
-  if (!m) {
-    return {}
-  }
-  return {
-    left: `${callout.x * m.scale}px`,
-    top: `${callout.y * m.scale}px`,
-    width: `${callout.width * m.scale}px`,
-    height: `${callout.height * m.scale}px`
-  }
-}
-
-const buildZoomLayoutPayload = () => {
-  if (!zoomLayout.value || zoomCallouts.value.length === 0) {
-    return null
-  }
-  return {
-    canvas_width: zoomLayout.value.canvasWidth,
-    canvas_height: zoomLayout.value.canvasHeight,
-    background: '#ffffff',
-    base: { ...zoomLayout.value.base },
-    callouts: zoomCallouts.value.map(({ src, x, y, width, height }) => ({
-      src,
-      x: Math.round(x),
-      y: Math.round(y),
-      width: Math.round(width),
-      height: Math.round(height)
-    }))
-  }
-}
-
-const ensureLayoutFitsCallouts = () => {
-  const layout = zoomLayout.value
-  if (!layout) {
+const toggleAreaStampMode = () => {
+  closeDrawingMenu()
+  if (areaStampMode.value) {
+    closeAreaStampPanel()
     return
   }
-  let maxBottom = layout.base.y + layout.base.height
-  for (const c of zoomCallouts.value) {
-    maxBottom = Math.max(maxBottom, c.y + c.height)
-  }
-  const needed = maxBottom + Math.round(layout.canvasWidth * 0.05)
-  if (needed > layout.canvasHeight) {
-    layout.canvasHeight = needed
-  }
+  commitPendingEffectEdits()
+  showCrop.value = false
+  drawingTool.value = null
+  activeControl.value = null
+  viewPanHandMode.value = false
+  stopViewPan()
+  areaStampMode.value = 'copy'
+  areaSelectDrag.value = null
 }
 
-const ensureZoomLayout = (natW, natH) => {
-  if (zoomLayout.value) {
-    return zoomLayout.value
-  }
-  const pad = Math.max(16, Math.round(natH * 0.05))
-  const baseScale = 0.52
-  let baseW = Math.round(natW * baseScale)
-  let baseH = Math.round(natH * baseScale)
-  baseW = Math.max(32, Math.min(natW, baseW))
-  baseH = Math.max(32, Math.min(natH, baseH))
-  const baseX = Math.round((natW - baseW) / 2)
-  const baseY = pad
-  zoomLayout.value = {
-    canvasWidth: natW,
-    canvasHeight: Math.round(baseY + baseH + natH * 0.58),
-    base: { x: baseX, y: baseY, width: baseW, height: baseH }
-  }
-  return zoomLayout.value
+const closeAreaStampPanel = () => {
+  areaStampMode.value = null
+  areaSelectDrag.value = null
+  window.removeEventListener('mousemove', onWindowAreaSelectMove)
+  window.removeEventListener('mouseup', onWindowAreaSelectEnd)
+  window.removeEventListener('touchmove', onWindowAreaSelectMove)
+  window.removeEventListener('touchend', onWindowAreaSelectEnd)
 }
 
-const extractRegionFromCurrentImage = (sourceRect) => {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image()
-    img.onload = () => {
-      const { x, y, width, height } = sourceRect
-      const c = document.createElement('canvas')
-      c.width = width
-      c.height = height
-      const ctx = c.getContext('2d')
-      if (!ctx) {
-        reject(new Error('Canvas'))
-        return
-      }
-      ctx.drawImage(img, x, y, width, height, 0, 0, width, height)
-      resolve(c.toDataURL('image/jpeg', 0.9))
-    }
-    img.onerror = () => reject(new Error('Imagem'))
-    img.src = currentImageUrl.value
-  })
+const clearAreaStampState = () => {
+  closeAreaStampPanel()
+  areaClipboard.value = null
 }
 
-const layoutPointToSourceNatural = (lx, ly) => {
-  const layout = zoomLayout.value
-  const el = imageRef.value
-  if (!layout || !el?.naturalWidth) {
-    return { x: 0, y: 0 }
-  }
-  const b = layout.base
-  const u = Math.max(0, Math.min(1, (lx - b.x) / Math.max(1, b.width)))
-  const v = Math.max(0, Math.min(1, (ly - b.y) / Math.max(1, b.height)))
-  return {
-    x: Math.round(u * el.naturalWidth),
-    y: Math.round(v * el.naturalHeight)
-  }
-}
-
-const sourceRectFromLayoutDrag = (drag) => {
-  const left = Math.min(drag.x0, drag.x1)
-  const top = Math.min(drag.y0, drag.y1)
-  const right = Math.max(drag.x0, drag.x1)
-  const bottom = Math.max(drag.y0, drag.y1)
-  const p0 = layoutPointToSourceNatural(left, top)
-  const p1 = layoutPointToSourceNatural(right, bottom)
-  const el = imageRef.value
-  const nw = el?.naturalWidth || 1
-  const nh = el?.naturalHeight || 1
-  return {
-    x: Math.max(0, Math.min(p0.x, p1.x)),
-    y: Math.max(0, Math.min(p0.y, p1.y)),
-    width: Math.max(8, Math.min(nw, Math.abs(p1.x - p0.x) || 8)),
-    height: Math.max(8, Math.min(nh, Math.abs(p1.y - p0.y) || 8))
-  }
-}
-
-const clientToLayoutBoard = (e) => {
-  const board = layoutBoardRef.value
-  const m = layoutBoardMetrics.value
-  if (!board || !m?.scale) {
-    return { x: 0, y: 0 }
-  }
-  const rect = board.getBoundingClientRect()
-  const cx = e.touches ? e.touches[0].clientX : e.clientX
-  const cy = e.touches ? e.touches[0].clientY : e.clientY
-  return { x: (cx - rect.left) / m.scale, y: (cy - rect.top) / m.scale }
-}
-
-const drawingPointerForEvent = (e) => {
-  if (usesLayoutDrawingSpace.value) {
-    const p = clientToLayoutBoard(e)
-    return {
-      draft: { x: p.x, y: p.y },
-      stored: { x: Math.round(p.x), y: Math.round(p.y) }
-    }
-  }
-  const p = clientToImgLocal(e)
-  return {
-    draft: { x: p.x, y: p.y },
-    stored: displayPointToNatural(p.x, p.y)
-  }
-}
-
-const draftPointToStored = (pt) => {
-  if (usesLayoutDrawingSpace.value) {
-    return { x: Math.round(pt.x), y: Math.round(pt.y) }
-  }
-  return displayPointToNatural(pt.x, pt.y)
-}
-
-const draftRectToStored = (left, top, w, h) => {
-  if (usesLayoutDrawingSpace.value) {
-    return {
-      x: Math.round(left),
-      y: Math.round(top),
-      width: Math.max(2, Math.round(w)),
-      height: Math.max(2, Math.round(h))
-    }
-  }
-  return displayRectToNatural(left, top, w, h)
-}
-
-const pushActiveDrawing = (shape) => {
-  if (usesLayoutDrawingSpace.value) {
-    layoutDrawings.value.push(shape)
-  } else {
-    drawings.value.push(shape)
-  }
-}
-
-const deselectZoomCallout = () => {
-  selectedZoomCalloutId.value = null
-}
-
-const calloutSizeForSourceRect = (sourceRect, layout, natW, natH, levelPercent = zoomDetailLevel.value) => {
-  const mul = Math.max(50, Math.min(400, levelPercent)) / 100
-  const sx = (layout.base.width / Math.max(1, natW)) * mul
-  const sy = (layout.base.height / Math.max(1, natH)) * mul
-  let cw = Math.round(sourceRect.width * sx)
-  let ch = Math.round(sourceRect.height * sy)
-  const maxW = Math.round(layout.canvasWidth * 0.85)
-  const maxH = Math.round(layout.canvasHeight * 0.45)
-  if (cw > maxW) {
-    const r = maxW / cw
-    cw = maxW
-    ch = Math.round(ch * r)
-  }
-  if (ch > maxH) {
-    const r = maxH / ch
-    ch = maxH
-    cw = Math.round(cw * r)
-  }
-  return { width: Math.max(24, cw), height: Math.max(24, ch) }
-}
-
-const inferZoomLevelFromCallout = (callout) => {
-  const el = imageRef.value
-  const layout = zoomLayout.value
-  if (!el?.naturalWidth || !layout || !callout?.sourceRect) {
-    return callout?.zoomLevel ?? 150
-  }
-  const baseMulX = layout.base.width / Math.max(1, el.naturalWidth)
-  if (baseMulX <= 0) {
-    return callout.zoomLevel ?? 150
-  }
-  const actualMulX = callout.width / Math.max(1, callout.sourceRect.width)
-  return Math.round(Math.max(50, Math.min(400, (actualMulX / baseMulX) * 100)))
-}
-
-const applyZoomLevelToCallout = (id, levelPercent) => {
-  const el = imageRef.value
-  const layout = zoomLayout.value
-  const callout = zoomCallouts.value.find((c) => c.id === id)
-  if (!el?.naturalWidth || !layout || !callout?.sourceRect) {
+const startAreaPasteMode = () => {
+  if (!areaClipboard.value) {
     return
   }
-  const level = Math.max(50, Math.min(400, Math.round(levelPercent)))
-  callout.zoomLevel = level
-  const cx = callout.x + callout.width / 2
-  const cy = callout.y + callout.height / 2
-  const { width, height } = calloutSizeForSourceRect(
-    callout.sourceRect,
-    layout,
-    el.naturalWidth,
-    el.naturalHeight,
-    level
-  )
-  callout.width = width
-  callout.height = height
-  callout.x = Math.round(cx - width / 2)
-  callout.y = Math.round(cy - height / 2)
-  callout.x = Math.max(0, Math.min(layout.canvasWidth - callout.width, callout.x))
-  callout.y = Math.max(0, Math.min(layout.canvasHeight - callout.height, callout.y))
-  ensureLayoutFitsCallouts()
+  areaStampMode.value = 'paste'
 }
 
-const selectZoomCallout = (id) => {
-  if (zoomDetailSelecting.value) {
+const clearAreaClipboard = () => {
+  areaClipboard.value = null
+  if (areaStampMode.value === 'paste') {
+    areaStampMode.value = null
+  }
+}
+
+const beginAreaSelectDrag = (x, y) => {
+  areaSelectDrag.value = { active: true, x0: x, y0: y, x1: x, y1: y }
+  window.addEventListener('mousemove', onWindowAreaSelectMove)
+  window.addEventListener('mouseup', onWindowAreaSelectEnd)
+  window.addEventListener('touchmove', onWindowAreaSelectMove, { passive: false })
+  window.addEventListener('touchend', onWindowAreaSelectEnd)
+}
+
+const onAreaStampCapturePointerDown = (e) => {
+  if (viewPanHandMode.value || spaceKeyDown.value) {
     return
   }
-  selectedZoomCalloutId.value = id
+  const pos = pointerOnImageElement(e)
+  beginAreaSelectDrag(pos.x, pos.y)
 }
 
-const addZoomCalloutFromSourceRect = async (sourceRect, src) => {
-  const el = imageRef.value
-  if (!el?.naturalWidth) {
-    return
-  }
-  const layout = ensureZoomLayout(el.naturalWidth, el.naturalHeight)
-  const { width: cw, height: ch } = calloutSizeForSourceRect(
-    sourceRect,
-    layout,
-    el.naturalWidth,
-    el.naturalHeight
-  )
-  const gap = Math.round(layout.canvasWidth * 0.04)
-  const rowY = layout.base.y + layout.base.height + gap
-  const idx = zoomCallouts.value.length
-  const slots = [
-    { x: gap, y: rowY },
-    { x: layout.canvasWidth - gap - cw, y: rowY },
-    { x: Math.round((layout.canvasWidth - cw) / 2), y: rowY + ch + gap }
-  ]
-  const pos = slots[idx % slots.length]
-  const newId = `zc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  const level = Math.max(50, Math.min(400, Math.round(zoomDetailLevel.value)))
-  zoomCallouts.value.push({
-    id: newId,
-    src,
-    sourceRect: { ...sourceRect },
-    zoomLevel: level,
-    x: pos.x,
-    y: pos.y,
-    width: cw,
-    height: ch
-  })
-  ensureLayoutFitsCallouts()
-  zoomDetailSelecting.value = false
-  selectedZoomCalloutId.value = null
-}
-
-const onWindowZoomSelectMove = (e) => {
-  if (!zoomSelectDrag.value?.active) {
+const onWindowAreaSelectMove = (e) => {
+  if (!areaSelectDrag.value?.active) {
     return
   }
   if (e.type === 'touchmove' && e.cancelable) {
     e.preventDefault()
   }
-  const p =
-    zoomSelectDrag.value.space === 'layout' ? clientToLayoutBoard(e) : clientToImgLocal(e)
-  zoomSelectDrag.value = { ...zoomSelectDrag.value, x1: p.x, y1: p.y }
+  const p = pointerOnImageElement(e)
+  areaSelectDrag.value = { ...areaSelectDrag.value, x1: p.x, y1: p.y }
 }
 
-const onWindowZoomSelectEnd = async () => {
-  window.removeEventListener('mousemove', onWindowZoomSelectMove)
-  window.removeEventListener('mouseup', onWindowZoomSelectEnd)
-  window.removeEventListener('touchmove', onWindowZoomSelectMove)
-  window.removeEventListener('touchend', onWindowZoomSelectEnd)
-  const drag = zoomSelectDrag.value
-  zoomSelectDrag.value = null
-  if (!drag?.active) {
+const onWindowAreaSelectEnd = async () => {
+  window.removeEventListener('mousemove', onWindowAreaSelectMove)
+  window.removeEventListener('mouseup', onWindowAreaSelectEnd)
+  window.removeEventListener('touchmove', onWindowAreaSelectMove)
+  window.removeEventListener('touchend', onWindowAreaSelectEnd)
+  const drag = areaSelectDrag.value
+  areaSelectDrag.value = null
+  if (!drag?.active || areaStampMode.value !== 'copy') {
     return
   }
   const w = Math.abs(drag.x1 - drag.x0)
@@ -6511,221 +7756,56 @@ const onWindowZoomSelectEnd = async () => {
   if (w < 6 || h < 6) {
     return
   }
-  const sourceRect =
-    drag.space === 'layout'
-      ? sourceRectFromLayoutDrag(drag)
-      : displayRectToNatural(
-          Math.min(drag.x0, drag.x1),
-          Math.min(drag.y0, drag.y1),
-          w,
-          h
-        )
+  const sourceRect = displayRectToNatural(
+    Math.min(drag.x0, drag.x1),
+    Math.min(drag.y0, drag.y1),
+    w,
+    h
+  )
   if (sourceRect.width < 8 || sourceRect.height < 8) {
     return
   }
   try {
-    const raw = await extractRegionFromCurrentImage(sourceRect)
+    const raw = await extractRegionComposited(sourceRect)
     const src = await shrinkDataUrlForOverlay(raw, 1400)
-    await addZoomCalloutFromSourceRect(sourceRect, src)
+    areaClipboard.value = {
+      src,
+      width: sourceRect.width,
+      height: sourceRect.height
+    }
+    const centerX = (drag.x0 + drag.x1) / 2
+    const centerY = (drag.y0 + drag.y1) / 2
+    pasteAreaStampAt(centerX, centerY)
   } catch (err) {
     console.error(err)
   }
 }
 
-const beginZoomSelectDrag = (space, x, y) => {
-  zoomSelectDrag.value = { active: true, space, x0: x, y0: y, x1: x, y1: y }
-  window.addEventListener('mousemove', onWindowZoomSelectMove)
-  window.addEventListener('mouseup', onWindowZoomSelectEnd)
-  window.addEventListener('touchmove', onWindowZoomSelectMove, { passive: false })
-  window.addEventListener('touchend', onWindowZoomSelectEnd)
-}
-
-const startZoomSelectOnLayout = (e) => {
-  if (!zoomDetailMode.value || !zoomDetailSelecting.value || !zoomLayout.value) {
+const pasteAreaStampAt = (displayX, displayY) => {
+  const clip = areaClipboard.value
+  const el = imageRef.value
+  if (!clip || !el?.naturalWidth || imageOverlays.value.length >= 20) {
     return
   }
-  const p = clientToLayoutBoard(e)
-  const b = zoomLayout.value.base
-  if (p.x < b.x || p.y < b.y || p.x > b.x + b.width || p.y > b.y + b.height) {
-    return
-  }
-  beginZoomSelectDrag('layout', p.x, p.y)
-}
-
-const stopZoomCalloutMove = () => {
-  window.removeEventListener('mousemove', onZoomCalloutWindowMove)
-  window.removeEventListener('mouseup', stopZoomCalloutMove)
-  window.removeEventListener('touchmove', onZoomCalloutWindowMove)
-  window.removeEventListener('touchend', stopZoomCalloutMove)
-  movingZoomCalloutId.value = null
-}
-
-const onZoomCalloutWindowMove = (e) => {
-  if (!movingZoomCalloutId.value || !zoomLayout.value) {
-    return
-  }
-  if (e.type === 'touchmove' && e.cancelable) {
-    e.preventDefault()
-  }
-  const callout = zoomCallouts.value.find((c) => c.id === movingZoomCalloutId.value)
-  if (!callout) {
-    return
-  }
-  const p = clientToLayoutBoard(e)
-  const layout = zoomLayout.value
-  let nx = p.x - zoomCalloutMoveGrab.value.x
-  let ny = p.y - zoomCalloutMoveGrab.value.y
-  nx = Math.max(0, Math.min(layout.canvasWidth - callout.width, nx))
-  ny = Math.max(0, Math.min(layout.canvasHeight - callout.height, ny))
-  callout.x = Math.round(nx)
-  callout.y = Math.round(ny)
-  ensureLayoutFitsCallouts()
-}
-
-const startZoomCalloutMove = (e, id) => {
-  if (zoomDetailSelecting.value) {
-    return
-  }
-  selectZoomCallout(id)
-  stopZoomCalloutMove()
-  stopZoomCalloutResize()
-  e.preventDefault()
-  e.stopPropagation()
-  const callout = zoomCallouts.value.find((c) => c.id === id)
-  if (!callout) {
-    return
-  }
-  const p = clientToLayoutBoard(e)
-  zoomCalloutMoveGrab.value = { x: p.x - callout.x, y: p.y - callout.y }
-  movingZoomCalloutId.value = id
-  window.addEventListener('mousemove', onZoomCalloutWindowMove)
-  window.addEventListener('mouseup', stopZoomCalloutMove)
-  window.addEventListener('touchmove', onZoomCalloutWindowMove, { passive: false })
-  window.addEventListener('touchend', stopZoomCalloutMove)
-}
-
-const stopZoomCalloutResize = () => {
-  const id = resizingZoomCalloutId.value
-  window.removeEventListener('mousemove', onZoomCalloutResizeMove)
-  window.removeEventListener('mouseup', stopZoomCalloutResize)
-  window.removeEventListener('touchmove', onZoomCalloutResizeMove)
-  window.removeEventListener('touchend', stopZoomCalloutResize)
-  if (id) {
-    const callout = zoomCallouts.value.find((c) => c.id === id)
-    if (callout) {
-      callout.zoomLevel = inferZoomLevelFromCallout(callout)
-    }
-  }
-  resizingZoomCalloutId.value = null
-  zoomCalloutResizeStart.value = null
-}
-
-const onZoomCalloutResizeMove = (e) => {
-  if (!resizingZoomCalloutId.value || !zoomCalloutResizeStart.value || !zoomLayout.value) {
-    return
-  }
-  if (e.type === 'touchmove' && e.cancelable) {
-    e.preventDefault()
-  }
-  const callout = zoomCallouts.value.find((c) => c.id === resizingZoomCalloutId.value)
-  if (!callout) {
-    return
-  }
-  const st = zoomCalloutResizeStart.value
-  const p = clientToLayoutBoard(e)
-  const layout = zoomLayout.value
-  let nw = Math.max(24, st.w0 + (p.x - st.mx0))
-  let nh = Math.max(24, st.h0 + (p.y - st.my0))
-  nw = Math.min(nw, layout.canvasWidth - callout.x)
-  nh = Math.min(nh, layout.canvasHeight - callout.y)
-  callout.width = Math.round(nw)
-  callout.height = Math.round(nh)
-  ensureLayoutFitsCallouts()
-}
-
-const startZoomCalloutResize = (e, id) => {
-  if (zoomDetailSelecting.value) {
-    return
-  }
-  selectZoomCallout(id)
-  stopZoomCalloutMove()
-  stopZoomCalloutResize()
-  e.preventDefault()
-  e.stopPropagation()
-  const callout = zoomCallouts.value.find((c) => c.id === id)
-  if (!callout) {
-    return
-  }
-  const p = clientToLayoutBoard(e)
-  zoomCalloutResizeStart.value = { mx0: p.x, my0: p.y, w0: callout.width, h0: callout.height }
-  resizingZoomCalloutId.value = id
-  window.addEventListener('mousemove', onZoomCalloutResizeMove)
-  window.addEventListener('mouseup', stopZoomCalloutResize)
-  window.addEventListener('touchmove', onZoomCalloutResizeMove, { passive: false })
-  window.addEventListener('touchend', stopZoomCalloutResize)
-}
-
-const removeZoomCallout = (id) => {
-  zoomCallouts.value = zoomCallouts.value.filter((c) => c.id !== id)
-  if (selectedZoomCalloutId.value === id) {
-    selectedZoomCalloutId.value =
-      zoomCallouts.value.length > 0 ? zoomCallouts.value[zoomCallouts.value.length - 1].id : null
-  }
-  if (zoomCallouts.value.length === 0) {
-    zoomLayout.value = null
-    layoutDrawings.value = []
-    zoomDetailSelecting.value = true
-    selectedZoomCalloutId.value = null
-  }
-}
-
-/** Fecha o painel de zoom sem apagar a composição já criada. */
-const closeZoomDetailPanel = () => {
-  zoomDetailMode.value = false
-  zoomDetailSelecting.value = false
-  deselectZoomCallout()
-  zoomSelectDrag.value = null
-  stopZoomCalloutMove()
-  stopZoomCalloutResize()
-  window.removeEventListener('mousemove', onWindowZoomSelectMove)
-  window.removeEventListener('mouseup', onWindowZoomSelectEnd)
-  window.removeEventListener('touchmove', onWindowZoomSelectMove)
-  window.removeEventListener('touchend', onWindowZoomSelectEnd)
-}
-
-const removeAllZoomCallouts = () => {
-  zoomCallouts.value = []
-  zoomLayout.value = null
-  layoutDrawings.value = []
-  selectedZoomCalloutId.value = null
-  zoomDetailSelecting.value = true
-}
-
-const clearZoomDetailState = () => {
-  closeZoomDetailPanel()
-  zoomDetailLevel.value = 150
-  selectedZoomCalloutId.value = null
-  zoomLayout.value = null
-  zoomCallouts.value = []
-  layoutDrawings.value = []
-}
-
-const startAnotherZoomCallout = () => {
-  zoomDetailSelecting.value = true
-}
-
-const toggleZoomDetailMode = () => {
-  closeDrawingMenu()
-  if (zoomDetailMode.value) {
-    closeZoomDetailPanel()
-    return
-  }
-  commitPendingEffectEdits()
-  showCrop.value = false
-  drawingTool.value = null
-  activeControl.value = null
-  zoomDetailMode.value = true
-  zoomDetailSelecting.value = !zoomLayout.value
+  const centerNat = displayPointToNatural(Math.round(displayX), Math.round(displayY))
+  let nx = centerNat.x - Math.round(clip.width / 2)
+  let ny = centerNat.y - Math.round(clip.height / 2)
+  nx = Math.max(0, Math.min(el.naturalWidth - clip.width, nx))
+  ny = Math.max(0, Math.min(el.naturalHeight - clip.height, ny))
+  imageOverlays.value.push({
+    id: `ov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    src: clip.src,
+    x: nx,
+    y: ny,
+    width: clip.width,
+    height: clip.height
+  })
+  const pasted = imageOverlays.value[imageOverlays.value.length - 1]
+  pushCanvasLayer('overlay', pasted.id)
+  selectedOverlayId.value = pasted.id
+  areaStampMode.value = null
+  scheduleApplyChanges()
+  recordEditHistory()
 }
 
 const drawingStylePayload = () => {
@@ -6768,6 +7848,101 @@ const stagePointFromViewport = (vx, vy) => ({
 const clientToImgLocal = (e) => {
   const p = viewportPointFromEvent(e)
   return stagePointFromViewport(p.x, p.y)
+}
+
+/** Posição do cursor em coords do elemento <img> (como blur/crop). */
+const pointerOnImageElement = (e) => {
+  const el = imageRef.value
+  if (!el) {
+    return { x: 0, y: 0 }
+  }
+  const rect = el.getBoundingClientRect()
+  const cx = e.touches?.[0]?.clientX ?? e.changedTouches?.[0]?.clientX ?? e.clientX
+  const cy = e.touches?.[0]?.clientY ?? e.changedTouches?.[0]?.clientY ?? e.clientY
+  return { x: cx - rect.left, y: cy - rect.top }
+}
+
+const loadImageElement = (src) =>
+  new Promise((resolve, reject) => {
+    const img = new window.Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('Imagem'))
+    img.src = src
+  })
+
+const extractRegionFromCurrentImage = (sourceRect) => {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image()
+    img.onload = () => {
+      const { x, y, width, height } = sourceRect
+      const c = document.createElement('canvas')
+      c.width = width
+      c.height = height
+      const ctx = c.getContext('2d')
+      if (!ctx) {
+        reject(new Error('Canvas'))
+        return
+      }
+      ctx.drawImage(img, x, y, width, height, 0, 0, width, height)
+      resolve(c.toDataURL('image/jpeg', 0.9))
+    }
+    img.onerror = () => reject(new Error('Imagem'))
+    img.src = currentImageUrl.value
+  })
+}
+
+/** Extrai a zona visível (fundo + overlays DOM) para colar noutro sítio. */
+const extractRegionComposited = async (sourceRect) => {
+  const { x, y, width, height } = sourceRect
+  const c = document.createElement('canvas')
+  c.width = width
+  c.height = height
+  const ctx = c.getContext('2d')
+  if (!ctx) {
+    throw new Error('Canvas')
+  }
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, width, height)
+  try {
+    const baseImg = await loadImageElement(currentImageUrl.value)
+    ctx.drawImage(baseImg, x, y, width, height, 0, 0, width, height)
+  } catch {
+    // mantém fundo branco
+  }
+  for (const ov of imageOverlays.value) {
+    const ix = Math.max(x, ov.x)
+    const iy = Math.max(y, ov.y)
+    const ix2 = Math.min(x + width, ov.x + ov.width)
+    const iy2 = Math.min(y + height, ov.y + ov.height)
+    if (ix >= ix2 || iy >= iy2) {
+      continue
+    }
+    try {
+      const ovImg = await loadImageElement(ov.src)
+      const ovNatW = Math.max(1, ov.width)
+      const ovNatH = Math.max(1, ov.height)
+      const scaleX = ovImg.naturalWidth / ovNatW
+      const scaleY = ovImg.naturalHeight / ovNatH
+      const relX = ix - ov.x
+      const relY = iy - ov.y
+      const relW = ix2 - ix
+      const relH = iy2 - iy
+      ctx.drawImage(
+        ovImg,
+        relX * scaleX,
+        relY * scaleY,
+        relW * scaleX,
+        relH * scaleY,
+        ix - x,
+        iy - y,
+        relW,
+        relH
+      )
+    } catch {
+      continue
+    }
+  }
+  return c.toDataURL('image/jpeg', 0.92)
 }
 
 const clampViewZoom = (z) => Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, z))
@@ -6849,6 +8024,9 @@ const startViewPan = (e) => {
 }
 
 const onViewportMouseDown = (e) => {
+  if (areaStampMode.value === 'copy') {
+    return
+  }
   if (e.button === 1 || (e.button === 0 && (spaceKeyDown.value || viewPanHandMode.value))) {
     e.preventDefault()
     startViewPan(e)
@@ -6870,6 +8048,9 @@ const touchMidViewport = (a, b) => {
 }
 
 const onViewportTouchStart = (e) => {
+  if (areaStampMode.value === 'copy') {
+    return
+  }
   if (e.touches.length === 2) {
     const mid = touchMidViewport(e.touches[0], e.touches[1])
     touchPinchStart = {
@@ -7009,7 +8190,7 @@ const onPenStrokeMove = (e) => {
   const p = drawingPointerForEvent(e).draft
   const pts = penDraftPoints.value
   const last = pts[pts.length - 1]
-  const minDist = usesLayoutDrawingSpace.value ? 1 : 2
+  const minDist = 2
   if (last && Math.hypot(p.x - last.x, p.y - last.y) < minDist) {
     return
   }
@@ -7049,7 +8230,6 @@ const toggleDrawingMenu = () => {
     closeDrawingPanel()
     return
   }
-  closeZoomDetailPanel()
   commitPendingEffectEdits()
   showDrawingMenu.value = true
   activeControl.value = null
@@ -7143,6 +8323,7 @@ const selectBlurBrush = () => {
     clearBlurBrushMask()
     ensureBlurBrushCanvas()
     scheduleApplyChanges()
+    syncMaskBrushHoverAfterModeEnter()
   } else {
     closeDrawingMenu()
   }
@@ -7183,6 +8364,7 @@ const selectPixelateBrush = () => {
     clearPixelateBrushMask()
     ensurePixelateBrushCanvas()
     scheduleApplyChanges()
+    syncMaskBrushHoverAfterModeEnter()
   } else {
     closeDrawingMenu()
   }
@@ -7208,8 +8390,6 @@ const selectPixelateGlobal = () => {
 }
 
 const selectDrawingTool = (tool) => {
-  deselectZoomCallout()
-  closeZoomDetailPanel()
   commitPendingEffectEdits()
   showPixelateMenu.value = false
   showBlurMenu.value = false
@@ -7238,18 +8418,13 @@ const clearDrawings = () => {
   stopDrawingMove()
   penDraftPoints.value = []
   drawings.value = []
-  layoutDrawings.value = []
   pathDraftPoints.value = []
   pathDraftHoverPos.value = null
   recordEditHistory()
 }
 
 const undoLastDrawing = () => {
-  if (usesLayoutDrawingSpace.value) {
-    layoutDrawings.value.pop()
-  } else {
-    drawings.value.pop()
-  }
+  drawings.value.pop()
   recordEditHistory()
 }
 
@@ -7386,6 +8561,41 @@ const onImageContextMenu = (e) => {
   }
 }
 
+const onMaskBrushSurfaceMouseDown = (e) => {
+  if (resizeDirection.value) {
+    return
+  }
+  if (e.button === 2 && showMaskBrushSizeControl.value) {
+    e.preventDefault()
+  }
+  if (showBlurRegion.value && blurShapeMode.value === 'brush') {
+    startBlurBrushStroke(e)
+    return
+  }
+  if (showPixelateRegion.value && pixelateShapeMode.value === 'brush') {
+    startPixelateBrushStroke(e)
+  }
+}
+
+const onMaskBrushSurfaceContextMenu = (e) => {
+  onImageContextMenu(e)
+}
+
+const onMaskBrushSurfaceTouchStart = (e) => {
+  if (resizeDirection.value) {
+    return
+  }
+  e.preventDefault()
+  updateMaskBrushHoverFromEvent(e)
+  if (showBlurRegion.value && blurShapeMode.value === 'brush') {
+    startBlurBrushStroke(e)
+    return
+  }
+  if (showPixelateRegion.value && pixelateShapeMode.value === 'brush') {
+    startPixelateBrushStroke(e)
+  }
+}
+
 const onImageMouseDown = (e) => {
   if (e.button === 2 && showMaskBrushSizeControl.value) {
     e.preventDefault()
@@ -7406,15 +8616,15 @@ const onImageMouseDown = (e) => {
       return
     }
   }
+  if (areaStampMode.value === 'copy') {
+    e.preventDefault()
+    const pos = pointerOnImageElement(e)
+    beginAreaSelectDrag(pos.x, pos.y)
+    return
+  }
   if (viewPanHandMode.value || spaceKeyDown.value) {
     e.preventDefault()
     startViewPan(e)
-    return
-  }
-  if (zoomDetailMode.value && zoomDetailSelecting.value && !zoomLayout.value) {
-    e.preventDefault()
-    const pos = clientToImgLocal(e)
-    beginZoomSelectDrag('img', pos.x, pos.y)
     return
   }
   if (
@@ -7448,28 +8658,19 @@ const onDrawingSurfaceMouseDown = (e) => {
     return
   }
   e.preventDefault()
-  deselectZoomCallout()
   const pos = drawingPointerForEvent(e).draft
   const t = drawingTool.value
   if (t === 'pixel') {
     const p = draftPointToStored(pos)
     pushActiveDrawing({ type: 'pixel', x: p.x, y: p.y, color: drawStrokeColor.value })
-    if (!usesLayoutDrawingSpace.value) {
-      void bakeDrawingsIntoPreview()
-    } else {
-      finishVectorDrawingEdit()
-    }
+    void bakeDrawingsIntoPreview()
     return
   }
   if (t === 'fill') {
     const p = draftPointToStored(pos)
     const col = drawFillEnabled.value && drawFillColor.value ? drawFillColor.value : drawStrokeColor.value
     pushActiveDrawing({ type: 'fill', x: p.x, y: p.y, color: col })
-    if (!usesLayoutDrawingSpace.value) {
-      void bakeDrawingsIntoPreview()
-    } else {
-      finishVectorDrawingEdit()
-    }
+    void bakeDrawingsIntoPreview()
     return
   }
   if (t === 'pen') {
@@ -7507,24 +8708,10 @@ const onDrawingSurfaceMouseDown = (e) => {
 }
 
 const onDrawingSurfaceClick = (e) => {
-  if (usesLayoutDrawingSpace.value) {
-    return
-  }
   onImageClickUnified(e)
 }
 
 const onDrawingSurfaceTouchStart = (e) => {
-  if (usesLayoutDrawingSpace.value) {
-    if (!drawingTool.value) {
-      return
-    }
-    if (showCrop.value || (showBlurRegion.value && blurShapeMode.value === 'rectangle') || (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle')) {
-      return
-    }
-    e.preventDefault()
-    onDrawingSurfaceMouseDown(e)
-    return
-  }
   onImageTouchStartUnified(e)
 }
 
@@ -7572,7 +8759,7 @@ const buildEditPayload = (options = {}) => {
     drawings:
       options.includeSaveFields || options.bakeDrawings ? drawings.value : [],
     image_overlays:
-      options.includeSaveFields || shouldBakeImageOverlaysInPreview.value
+      options.includeSaveFields || shouldComposeCollageOverlaysInPreview.value
         ? mapImageOverlaysPayload()
         : [],
     caption_settings: buildCaptionSettingsPayload(),
@@ -7585,8 +8772,6 @@ const buildEditPayload = (options = {}) => {
       number: Math.max(1, Math.round(photoCaptionApplied.value?.number || 1)),
       description: photoCaptionApplied.value?.description || ''
     }
-    payload.zoom_layout = buildZoomLayoutPayload()
-    payload.layout_drawings = layoutDrawings.value
     payload.save_mode = saveMode.value
     if (props.galleryFoldersEnabled && saveMode.value === 'copy') {
       payload.save_copy_folder_id = saveCopyFolderId.value || 'entrada'
@@ -7606,19 +8791,24 @@ const applyChanges = async (options = {}) => {
   }
   previewInFlight = true
   const requestId = ++previewRequestId
+  const payload = buildEditPayload(options)
   try {
-    const response = await axios.post('/api/image/preview', buildEditPayload(options))
+    const response = await axios.post('/api/image/preview', payload)
 
     if (requestId !== previewRequestId) {
       return
     }
 
     if (response.data.success) {
-      currentImageUrl.value = response.data.image_data
+      const newUrl = response.data.image_data
+      if (options.commitGeometryPreview) {
+        await finalizeGeometryPreviewUrl(newUrl)
+      } else {
+        currentImageUrl.value = newUrl
+      }
       if (options.bakeDrawings) {
         drawings.value = []
-        layoutDrawings.value = []
-        selectedDrawingIndex.value = null
+              selectedDrawingIndex.value = null
       }
       if (showCrop.value) {
         scheduleCropDisplaySync()
@@ -7712,7 +8902,6 @@ const syncStateAfterSave = (url) => {
   committedPixelateMask.value = null
   pixelateApplyGlobal.value = false
   drawings.value = []
-  layoutDrawings.value = []
   drawingTool.value = null
   penDraftPoints.value = []
   pathDraftPoints.value = []
@@ -7724,7 +8913,7 @@ const syncStateAfterSave = (url) => {
   showFilterMenu.value = false
   activeFilterPreset.value = null
   activeControl.value = null
-  clearZoomDetailState()
+  clearAreaStampState()
   texts.value = []
   selectedTextIndex.value = null
   textContent.value = ''
@@ -7739,6 +8928,7 @@ const syncStateAfterSave = (url) => {
   textBgOpacity.value = 75
   textBgPadding.value = 6
   imageOverlays.value = []
+  canvasLayerStack.value = []
   selectedOverlayId.value = null
   captionSettings.value = createDefaultCaptionSettings()
   showCustomCaptionPrefix.value = false
@@ -7912,11 +9102,9 @@ const hasChanges = computed(() => {
          pixelateMaskDirty.value ||
          texts.value.length > 0 ||
          drawings.value.length > 0 ||
-         layoutDrawings.value.length > 0 ||
          imageOverlays.value.length > 0 ||
          photoCaptionApplied.value !== null ||
-         watermarkApplied.value ||
-         zoomCallouts.value.length > 0
+         watermarkApplied.value
 })
 
 watch(hasChanges, (changed) => {
@@ -7926,7 +9114,22 @@ watch(hasChanges, (changed) => {
   }
 })
 
+const tryPasteAreaStamp = (e) => {
+  if (areaStampMode.value !== 'paste' || !areaClipboard.value) {
+    return false
+  }
+  if (drawingTool.value || showCrop.value || showBlurRegion.value || showPixelateRegion.value) {
+    return false
+  }
+  const pos = pointerOnImageElement(e)
+  pasteAreaStampAt(pos.x, pos.y)
+  return true
+}
+
 const positionText = (e) => {
+  if (tryPasteAreaStamp(e)) {
+    return
+  }
   if (drawingTool.value) {
     return
   }
@@ -7939,7 +9142,9 @@ const positionText = (e) => {
   const pNat = displayPointToNatural(Math.round(pos.x), Math.round(pos.y))
 
   selectedTextIndex.value = null
-  texts.value.push(buildTextItemFromPanel(textContent.value.trim(), pNat.x, pNat.y))
+  const textItem = buildTextItemFromPanel(textContent.value, pNat.x, pNat.y)
+  texts.value.push(textItem)
+  pushCanvasLayer('text', textItem.id)
   textContent.value = ''
   void applyChanges().then(() => {
     nextTick(() => recordEditHistory())
@@ -7972,9 +9177,21 @@ const onImageTouchStartUnified = (e) => {
     startPixelateBrushStroke(e)
     return
   }
+  if (areaStampMode.value === 'copy') {
+    e.preventDefault()
+    const pos = pointerOnImageElement(e)
+    beginAreaSelectDrag(pos.x, pos.y)
+    return
+  }
   if (viewPanHandMode.value) {
     e.preventDefault()
     startViewPan(e)
+    return
+  }
+  if (areaStampMode.value === 'paste' && areaClipboard.value) {
+    e.preventDefault()
+    const pos = pointerOnImageElement(e)
+    pasteAreaStampAt(pos.x, pos.y)
     return
   }
   if (drawingTool.value) {
@@ -8028,8 +9245,11 @@ onMounted(() => {
   window.addEventListener('keydown', onSpaceKeyDown)
   window.addEventListener('keyup', onSpaceKeyUp)
   window.addEventListener('keydown', onHistoryKeyDown)
+  window.addEventListener('mousedown', onLayerContextMenuDismiss)
+  window.addEventListener('keydown', onLayerContextMenuDismiss)
   nextTick(() => {
     syncImageNaturalMetrics()
+    ensureImageLayoutObserver()
     if (!editHistoryReady.value) {
       bootstrapEditHistory()
     }
@@ -8071,6 +9291,9 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onSpaceKeyDown)
   window.removeEventListener('keyup', onSpaceKeyUp)
   window.removeEventListener('keydown', onHistoryKeyDown)
+  window.removeEventListener('mousedown', onLayerContextMenuDismiss)
+  window.removeEventListener('keydown', onLayerContextMenuDismiss)
+  closeOverlayContextMenu()
   window.removeEventListener('mousemove', onWindowDrawMove)
   window.removeEventListener('mouseup', onWindowDrawEnd)
   window.removeEventListener('touchmove', onWindowDrawMove)
@@ -8079,11 +9302,13 @@ onUnmounted(() => {
   stopMovingText()
   stopPixelateBrushStroke()
   stopBlurBrushStroke()
+  detachMaskBrushHoverTracker()
   stopOverlayMove()
   stopOverlayResize()
   stopDrawingMove()
   stopCropPan()
   disconnectCropLayoutObserver()
+  disconnectImageLayoutObserver()
   cancelCropDisplaySyncRaf()
   clearPreviewDebounceTimer()
 })
@@ -8101,8 +9326,45 @@ defineExpose({
   object-fit: contain;
 }
 
-.zoom-callout-img,
-.zoom-layout-base-img {
-  object-fit: fill;
+
+.editor-color-input {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: 2rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 0.25rem;
+  background: transparent;
+  cursor: pointer;
+  color-scheme: light dark;
+}
+
+.editor-color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.editor-color-input::-webkit-color-swatch {
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 0.2rem;
+}
+
+.editor-color-input::-moz-color-swatch {
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 0.2rem;
+}
+
+.editor-color-preset {
+  height: 1.1rem;
+  width: 1.1rem;
+  border-radius: 9999px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+
+.editor-color-preset-active {
+  border-color: #34d399;
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.85);
 }
 </style>

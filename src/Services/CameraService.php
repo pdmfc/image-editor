@@ -536,10 +536,10 @@ class CameraService
         return [];
     }
 
-    public function createGalleryFolder(string|int $userId, string $name): array
+    public function createGalleryFolder(string|int $userId, string $name, ?string $color = null): array
     {
         try {
-            $folder = $this->galleryFolders->createFolder($userId, $name);
+            $folder = $this->galleryFolders->createFolder($userId, $name, $color);
 
             return [
                 'success' => true,
@@ -553,10 +553,10 @@ class CameraService
         }
     }
 
-    public function renameGalleryFolder(string|int $userId, string $folderId, string $name): array
+    public function renameGalleryFolder(string|int $userId, string $folderId, string $name, ?string $color = null): array
     {
         try {
-            $this->galleryFolders->renameFolder($userId, $folderId, $name);
+            $this->galleryFolders->renameFolder($userId, $folderId, $name, $color);
 
             return [
                 'success' => true,

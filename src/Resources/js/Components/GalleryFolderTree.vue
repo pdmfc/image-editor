@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
+import { folderDisplayColor, folderCountBadgeStyle, folderTintStyles } from '../constants/galleryFolderColors.js'
 
 const props = defineProps({
   folders: { type: Array, default: () => [] },
@@ -77,6 +78,26 @@ const isThumbnailDraggable = (photo) =>
   (props.canDragPhotoToFolder(photo) || props.canDragPhotoToCanvas(photo)) &&
   !props.bulkSelectMode &&
   !props.reorderMode
+
+const folderAccentStyle = (folder) => ({
+  color: folderDisplayColor(folder)
+})
+
+const folderButtonStyle = (folder) => {
+  if (isReorderActiveInFolder(folder.id) || isBulkActiveInFolder(folder.id)) {
+    return {}
+  }
+
+  if (props.folderDropTargetId === folder.id) {
+    return folderTintStyles(folder, { dropTarget: true })
+  }
+
+  if (isExpanded(folder.id)) {
+    return folderTintStyles(folder, { active: true })
+  }
+
+  return folderTintStyles(folder)
+}
 
 const onPhotoPointerDown = (folderId, index, event) => {
   if (!isReorderActiveInFolder(folderId)) {
@@ -214,6 +235,7 @@ onUnmounted(() => {
             type="button"
             class="gallery-tree-chevron"
             :class="{ 'gallery-tree-chevron--expanded': isExpanded(folder.id) }"
+            :style="isExpanded(folder.id) ? { color: folderDisplayColor(folder) } : undefined"
             :title="isExpanded(folder.id) ? 'Recolher pasta' : 'Expandir pasta'"
             @click="emit('toggle-branch', folder.id)"
           >
@@ -224,9 +246,8 @@ onUnmounted(() => {
           <button
             type="button"
             class="gallery-folder-btn min-w-0 flex-1"
+            :style="folderButtonStyle(folder)"
             :class="{
-              'gallery-folder-btn--active': isExpanded(folder.id),
-              'gallery-folder-btn--drop-target': folderDropTargetId === folder.id,
               'gallery-folder-btn--reorder-target': isReorderActiveInFolder(folder.id),
               'gallery-folder-btn--bulk-target': isBulkActiveInFolder(folder.id)
             }"
@@ -239,7 +260,14 @@ onUnmounted(() => {
             "
             @click="emit('select-folder', folder.id)"
           >
-            <svg class="gallery-folder-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg
+              class="gallery-folder-icon"
+              :style="folderAccentStyle(folder)"
+              fill="currentColor"
+              fill-opacity="0.18"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -248,7 +276,10 @@ onUnmounted(() => {
               />
             </svg>
             <span class="min-w-0 flex-1 truncate text-left">{{ folder.name }}</span>
-            <span class="gallery-folder-count">{{ folderPhotoCount(folder.id) }}</span>
+            <span
+              class="gallery-folder-count"
+              :style="folderCountBadgeStyle(folder, { active: isExpanded(folder.id) })"
+            >{{ folderPhotoCount(folder.id) }}</span>
           </button>
           <div
             v-if="!folder.system"
@@ -457,11 +488,7 @@ onUnmounted(() => {
 
 <style scoped>
 .gallery-folder-btn {
-  @apply flex w-full items-center gap-2 rounded-lg border-2 border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-700 transition hover:border-gray-300;
-}
-
-.gallery-folder-btn--active {
-  @apply border-blue-500 bg-blue-50 font-medium text-blue-900 ring-2 ring-blue-200;
+  @apply flex w-full items-center gap-2 rounded-lg border-2 bg-white px-2 py-1.5 text-xs text-gray-700 transition hover:brightness-[0.98];
 }
 
 .gallery-folder-btn--reorder-target {
@@ -473,23 +500,11 @@ onUnmounted(() => {
 }
 
 .gallery-folder-icon {
-  @apply h-4 w-4 shrink-0 text-gray-400;
-}
-
-.gallery-folder-btn--active .gallery-folder-icon {
-  @apply text-blue-600;
+  @apply h-4 w-4 shrink-0;
 }
 
 .gallery-folder-count {
-  @apply shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500;
-}
-
-.gallery-folder-btn--active .gallery-folder-count {
-  @apply bg-blue-100 text-blue-700;
-}
-
-.gallery-folder-btn--drop-target {
-  @apply border-blue-400 bg-blue-100 ring-2 ring-blue-300;
+  @apply shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium;
 }
 
 .gallery-tree-chevron {
@@ -497,7 +512,7 @@ onUnmounted(() => {
 }
 
 .gallery-tree-chevron--expanded {
-  @apply rotate-90 text-blue-600;
+  @apply rotate-90;
 }
 
 .gallery-tree-children {

@@ -74,29 +74,10 @@ class ImageService
             }
 
             $rotation = (int) round((float) $data->input('rotation', 0));
-            $image->brightness($data->input('brightness', 0))
-                ->contrast($data->input('contrast', 0));
-            $this->applySaturation($image, (float) $data->input('saturation', 0));
-            $this->applyFilterPresetTone($image, $data->input('filter_preset'));
+            $composeOverlays = $this->hasImageOverlays($data);
 
-            $gammaAdj = min(100, max(-100, (int) round((float) $data->input('gamma', 0))));
-            $gammaFactor = 1.0 + ($gammaAdj / 100.0) * 0.42;
-            if (abs($gammaFactor - 1.0) > 0.012) {
-                try {
-                    $image->gamma(max(0.55, min(2.2, $gammaFactor)));
-                } catch (\Throwable) {
-                    //
-                }
-            }
-
-            $gammaFine = min(50, max(-50, (int) round((float) $data->input('gamma_fine', 0))));
-            $fineFactor = 1.0 + ($gammaFine / 50.0) * 0.14;
-            if (abs($fineFactor - 1.0) > 0.01) {
-                try {
-                    $image->gamma(max(0.88, min(1.15, $fineFactor)));
-                } catch (\Throwable) {
-                    //
-                }
+            if (! $composeOverlays) {
+                $this->applyToneAdjustments($image, $data);
             }
 
             if ($rotation !== 0) {
@@ -125,14 +106,17 @@ class ImageService
             }
 
             $this->applyImageOverlays($image, $data);
+
+            if ($composeOverlays) {
+                $this->applyToneAdjustments($image, $data);
+            }
+
             $this->applyBlur($image, $data);
             $this->applyPixelate($image, $data);
             $this->applySharpen($image, $data);
             (new DrawingApplicator())->apply($image, $data->input('drawings'));
             $this->applyWatermark($image, $data);
             $image = $this->applyPhotoCaptionBand($image, $data);
-            $image = $this->composeZoomLayoutIfPresent($image, $data);
-            $this->applyLayoutDrawings($image, $data);
 
             if ($save) {
 
@@ -197,7 +181,11 @@ class ImageService
                 ];
             }
 
-            $base64Image = 'data:image/jpeg;base64,' . $image->encode(new JpegEncoder())->toBase64();
+            $overlayItems = $data->input('image_overlays');
+            $previewQuality = is_array($overlayItems) && $overlayItems !== []
+                ? 92
+                : 85;
+            $base64Image = 'data:image/jpeg;base64,' . $image->encode(new JpegEncoder(quality: $previewQuality))->toBase64();
 
             return [
                 'success' => true,
@@ -311,6 +299,44 @@ class ImageService
                 }
             }
         }
+    }
+
+    /**
+     * Folha em branco com imagens coladas: brilho, contraste, saturação, filtros e gama.
+     */
+    private function applyToneAdjustments(ImageInterface $image, Request $data): void
+    {
+        $image->brightness($data->input('brightness', 0))
+            ->contrast($data->input('contrast', 0));
+        $this->applySaturation($image, (float) $data->input('saturation', 0));
+        $this->applyFilterPresetTone($image, $data->input('filter_preset'));
+
+        $gammaAdj = min(100, max(-100, (int) round((float) $data->input('gamma', 0))));
+        $gammaFactor = 1.0 + ($gammaAdj / 100.0) * 0.42;
+        if (abs($gammaFactor - 1.0) > 0.012) {
+            try {
+                $image->gamma(max(0.55, min(2.2, $gammaFactor)));
+            } catch (\Throwable) {
+                //
+            }
+        }
+
+        $gammaFine = min(50, max(-50, (int) round((float) $data->input('gamma_fine', 0))));
+        $fineFactor = 1.0 + ($gammaFine / 50.0) * 0.14;
+        if (abs($fineFactor - 1.0) > 0.01) {
+            try {
+                $image->gamma(max(0.88, min(1.15, $fineFactor)));
+            } catch (\Throwable) {
+                //
+            }
+        }
+    }
+
+    private function hasImageOverlays(Request $data): bool
+    {
+        $items = $data->input('image_overlays');
+
+        return is_array($items) && $items !== [];
     }
 
     /**
@@ -587,106 +613,6 @@ class ImageService
     }
 
     /**
-     * Composição "detalhe ampliado": fundo branco, imagem principal reduzida e recortes posicionados.
-     */
-    private function composeZoomLayoutIfPresent(ImageInterface $image, Request $data): ImageInterface
-    {
-        $layout = $data->input('zoom_layout');
-        if (! is_array($layout)) {
-            return $image;
-        }
-
-        $callouts = $layout['callouts'] ?? [];
-        if (! is_array($callouts) || $callouts === []) {
-            return $image;
-        }
-
-        $base = $layout['base'] ?? null;
-        if (! is_array($base)) {
-            return $image;
-        }
-
-        $canvasW = max(1, (int) ($layout['canvas_width'] ?? $image->width()));
-        $canvasH = max(1, (int) ($layout['canvas_height'] ?? $image->height()));
-        $bx = max(0, (int) ($base['x'] ?? 0));
-        $by = max(0, (int) ($base['y'] ?? 0));
-        $bw = max(2, (int) ($base['width'] ?? $image->width()));
-        $bh = max(2, (int) ($base['height'] ?? $image->height()));
-
-        $background = is_string($layout['background'] ?? null) ? (string) $layout['background'] : '#ffffff';
-
-        try {
-            $canvas = Image::createImage($canvasW, $canvasH);
-            $canvas->fill($background);
-
-            $baseLayer = Image::decode($image->encode(new JpegEncoder())->toString());
-            $baseLayer->resize($bw, $bh);
-            $canvas->insert($baseLayer, $bx, $by, Alignment::TOP_LEFT);
-
-            foreach (array_slice($callouts, 0, 12) as $item) {
-                if (! is_array($item)) {
-                    continue;
-                }
-
-                $src = $item['src'] ?? null;
-                if (! is_string($src) || strlen($src) > 6_500_000) {
-                    continue;
-                }
-
-                try {
-                    $piece = str_starts_with($src, 'data:')
-                        ? Image::decodeDataUri($src)
-                        : Image::decodeBase64($src);
-                } catch (\Throwable) {
-                    continue;
-                }
-
-                $tx = (int) ($item['x'] ?? 0);
-                $ty = (int) ($item['y'] ?? 0);
-                $tw = (int) ($item['width'] ?? 0);
-                $th = (int) ($item['height'] ?? 0);
-
-                if ($tw < 2 || $th < 2) {
-                    continue;
-                }
-
-                $tx = max(0, min($canvasW - 1, $tx));
-                $ty = max(0, min($canvasH - 1, $ty));
-                $tw = min($tw, $canvasW - $tx);
-                $th = min($th, $canvasH - $ty);
-
-                if ($tw < 2 || $th < 2) {
-                    continue;
-                }
-
-                try {
-                    $piece->resize($tw, $th);
-                    $canvas->insert($piece, $tx, $ty, Alignment::TOP_LEFT);
-                } catch (\Throwable) {
-                    continue;
-                }
-            }
-
-            return $canvas;
-        } catch (\Throwable) {
-            return $image;
-        }
-    }
-
-    /**
-     * Desenhos sobre a composição de zoom (após o canvas branco + detalhes).
-     */
-    private function applyLayoutDrawings(ImageInterface $image, Request $data): void
-    {
-        $layout = $data->input('zoom_layout');
-        if (! is_array($layout) || empty($layout['callouts'])) {
-            return;
-        }
-
-        (new DrawingApplicator())->apply($image, $data->input('layout_drawings'));
-    }
-
-    /**
      * Marca de água (texto ou imagem) num canto da foto.
      */
     private function applyWatermark(ImageInterface $image, Request $data): void
@@ -865,6 +791,11 @@ class ImageService
      */
     private function measureTextBlockBox(string $content, array $text, ImageInterface $image): array
     {
+        $boxWidth = (int) ($text['box_width'] ?? 0);
+        if ($boxWidth > 0) {
+            $content = $this->wrapTextBlockToWidth($content, $boxWidth, $text, $image);
+        }
+
         $fontPath = $this->resolveTextFontPath($text);
         $naturalPx = max(6.0, min(900.0, (float) ($text['size'] ?? 24)));
 
@@ -1149,9 +1080,14 @@ class ImageService
 
     private function applyTextItem(ImageInterface $image, array $text): void
     {
-        $content = trim((string) ($text['content'] ?? ''));
+        $content = $this->normalizeTextContent((string) ($text['content'] ?? ''));
         if ($content === '') {
             return;
+        }
+
+        $boxWidth = (int) ($text['box_width'] ?? 0);
+        if ($boxWidth > 0) {
+            $content = $this->wrapTextBlockToWidth($content, $boxWidth, $text, $image);
         }
 
         $x = (int) ($text['x'] ?? 0);
@@ -1162,14 +1098,121 @@ class ImageService
             $this->drawTextBackground($image, $text, $content, $x, $y, $bgColor);
         }
 
+        $lines = preg_split('/\n/', $content) ?: [''];
+        $leading = $this->textLineLeading($text, $image);
+
+        foreach ($lines as $index => $line) {
+            $lineY = $y + ($index * $leading);
+            $this->renderTextLine($image, $line === '' ? ' ' : $line, $text, $x, $lineY);
+        }
+    }
+
+    private function renderTextLine(
+        ImageInterface $image,
+        string $line,
+        array $text,
+        int $x,
+        int $y
+    ): void {
         $image->text(
-            $content,
+            $line,
             $x,
             $y,
             function (FontFactory $font) use ($text, $image): void {
                 $this->configureTextFont($font, $text, $image);
             }
         );
+    }
+
+    private function normalizeTextContent(string $content): string
+    {
+        $content = preg_replace("/\r\n|\r/", "\n", $content) ?? $content;
+
+        return trim($content);
+    }
+
+    private function wrapTextBlockToWidth(string $content, int $maxWidth, array $text, ImageInterface $image): string
+    {
+        if ($maxWidth < 1 || $content === '') {
+            return $content;
+        }
+
+        $paragraphs = preg_split('/\n/', $content) ?: [''];
+        $wrappedLines = [];
+
+        foreach ($paragraphs as $paragraph) {
+            if ($paragraph === '') {
+                $wrappedLines[] = '';
+
+                continue;
+            }
+
+            $wrappedLines = array_merge(
+                $wrappedLines,
+                $this->wrapTextLineToWidth($paragraph, $maxWidth, $text, $image)
+            );
+        }
+
+        return implode("\n", $wrappedLines);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function wrapTextLineToWidth(string $line, int $maxWidth, array $text, ImageInterface $image): array
+    {
+        $fontPath = $this->resolveTextFontPath($text);
+        if ($fontPath === null) {
+            return [$line];
+        }
+
+        $naturalPx = max(6.0, min(900.0, (float) ($text['size'] ?? 24)));
+        $nativeSize = $this->nativeFontSizeForRendering($image, $naturalPx);
+        $words = preg_split('/\s+/u', trim($line), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if ($words === []) {
+            return [''];
+        }
+
+        $lines = [];
+        $current = '';
+
+        foreach ($words as $word) {
+            $candidate = $current === '' ? $word : $current.' '.$word;
+
+            if ($this->ttfTextWidth($fontPath, $nativeSize, $candidate) <= $maxWidth) {
+                $current = $candidate;
+
+                continue;
+            }
+
+            if ($current !== '') {
+                $lines[] = $current;
+            }
+
+            $current = $word;
+        }
+
+        if ($current !== '') {
+            $lines[] = $current;
+        }
+
+        return $lines !== [] ? $lines : [''];
+    }
+
+    private function textLineLeading(array $text, ImageInterface $image): int
+    {
+        $naturalPx = max(6.0, min(900.0, (float) ($text['size'] ?? 24)));
+        $fontPath = $this->resolveTextFontPath($text);
+
+        if ($fontPath === null) {
+            return max(1, (int) round($naturalPx * 1.3));
+        }
+
+        $nativeSize = $this->nativeFontSizeForRendering($image, $naturalPx);
+        $typographicalSize = $this->ttfTextHeight($fontPath, $nativeSize, 'Hy');
+
+        return max(1, (int) round($typographicalSize * 1.25 * 0.8));
     }
 
     private function drawTextBackground(

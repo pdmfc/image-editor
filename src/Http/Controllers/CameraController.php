@@ -260,11 +260,13 @@ class CameraController extends Controller
         $request->validate([
             'user_id' => 'required',
             'name' => 'required|string|max:80',
+            'color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ]);
 
         $result = $this->cameraService->createGalleryFolder(
             $request->input('user_id'),
-            (string) $request->input('name')
+            (string) $request->input('name'),
+            $request->input('color')
         );
 
         if (isset($result['error'])) {
@@ -283,12 +285,14 @@ class CameraController extends Controller
         $request->validate([
             'user_id' => 'required',
             'name' => 'required|string|max:80',
+            'color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ]);
 
         $result = $this->cameraService->renameGalleryFolder(
             $request->input('user_id'),
             $folderId,
-            (string) $request->input('name')
+            (string) $request->input('name'),
+            $request->input('color')
         );
 
         if (isset($result['error'])) {

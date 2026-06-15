@@ -141,7 +141,7 @@
                 class="rounded-lg border-2 border-blue-200 bg-white p-2 shadow-sm"
               >
                 <p class="mb-1.5 text-[10px] font-medium text-gray-500">
-                  {{ folderEditor.mode === 'create' ? 'Nova pasta' : 'Renomear pasta' }}
+                  {{ folderEditor.mode === 'create' ? 'Nova pasta' : 'Editar pasta' }}
                 </p>
                 <input
                   ref="folderNameInputRef"
@@ -155,6 +155,26 @@
                   @keydown.enter.prevent="submitFolderEditor"
                   @keydown.esc.prevent="closeFolderEditor"
                 />
+                <div class="mt-2">
+                  <p class="mb-1 text-[10px] font-medium text-gray-500">Cor</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button
+                      v-for="color in GALLERY_FOLDER_COLORS"
+                      :key="color"
+                      type="button"
+                      class="h-5 w-5 rounded-full border-2 transition hover:scale-110"
+                      :class="
+                        folderEditor.color === color
+                          ? 'border-gray-900 ring-2 ring-blue-200'
+                          : 'border-white shadow-sm'
+                      "
+                      :style="{ backgroundColor: color }"
+                      :title="`Cor ${color}`"
+                      :disabled="folderActionLoading"
+                      @click="folderEditor.color = color"
+                    />
+                  </div>
+                </div>
                 <p v-if="folderEditor.error" class="mt-1 text-[10px] text-red-600">
                   {{ folderEditor.error }}
                 </p>
@@ -734,6 +754,11 @@ import GalleryFolderTree from '../Components/GalleryFolderTree.vue'
 import { useImageEditorRealtime } from '../composables/useImageEditorRealtime.js'
 import { useImageEditorActionButtons } from '../composables/useImageEditorActionButtons.js'
 import { useImageEditorGalleryFolders } from '../composables/useImageEditorGalleryFolders.js'
+import {
+  GALLERY_FOLDER_COLORS,
+  defaultFolderColor,
+  folderDisplayColor
+} from '../constants/galleryFolderColors.js'
 
 const props = defineProps({
   asModal: {
@@ -883,6 +908,7 @@ const folderEditor = ref({
   mode: 'create',
   folderId: null,
   name: '',
+  color: GALLERY_FOLDER_COLORS[0],
   error: ''
 })
 const folderNameInputRef = ref(null)
@@ -1739,6 +1765,7 @@ const openFolderEditor = (mode, folder = null) => {
     mode,
     folderId: folder?.id ?? null,
     name: folder?.name ?? '',
+    color: folder?.color ?? defaultFolderColor(folders.value),
     error: ''
   }
   focusFolderEditorInput()
@@ -1757,6 +1784,7 @@ const closeFolderEditor = () => {
   folderEditor.value.error = ''
   folderEditor.value.name = ''
   folderEditor.value.folderId = null
+  folderEditor.value.color = defaultFolderColor(folders.value)
 }
 
 const submitFolderEditor = async () => {
@@ -1768,18 +1796,26 @@ const submitFolderEditor = async () => {
 
   if (folderEditor.value.mode === 'rename') {
     const current = folders.value.find((item) => item.id === folderEditor.value.folderId)
-    if (current && current.name === name) {
+    if (
+      current &&
+      current.name === name &&
+      folderDisplayColor(current) === folderEditor.value.color
+    ) {
       closeFolderEditor()
       return
     }
-    await renameGalleryFolder(folderEditor.value.folderId, name)
+    await renameGalleryFolder(
+      folderEditor.value.folderId,
+      name,
+      folderEditor.value.color
+    )
     return
   }
 
-  await createGalleryFolder(name)
+  await createGalleryFolder(name, folderEditor.value.color)
 }
 
-const createGalleryFolder = async (name) => {
+const createGalleryFolder = async (name, color) => {
   if (!galleryFoldersEnabled.value || !requireUserId() || folderActionLoading.value) {
     return
   }
@@ -1789,6 +1825,7 @@ const createGalleryFolder = async (name) => {
   try {
     const response = await axios.post('/api/camera/folders', {
       name,
+      color,
       ...userParams()
     })
     if (response.data?.error) {
@@ -1811,7 +1848,7 @@ const createGalleryFolder = async (name) => {
   }
 }
 
-const renameGalleryFolder = async (folderId, name) => {
+const renameGalleryFolder = async (folderId, name, color) => {
   if (!folderId || folderActionLoading.value || !requireUserId()) {
     return
   }
@@ -1821,6 +1858,7 @@ const renameGalleryFolder = async (folderId, name) => {
   try {
     const response = await axios.patch(`/api/camera/folders/${encodeURIComponent(folderId)}`, {
       name,
+      color,
       ...userParams()
     })
     if (response.data?.error) {
@@ -1828,7 +1866,7 @@ const renameGalleryFolder = async (folderId, name) => {
     }
     folders.value = response.data.folders ?? folders.value
     closeFolderEditor()
-    showNotification('success', 'Pasta renomeada', `A pasta passou a chamar-se «${name}».`)
+    showNotification('success', 'Pasta actualizada', `A pasta «${name}» foi actualizada.`)
   } catch (error) {
     console.error(error)
     folderEditor.value.error =

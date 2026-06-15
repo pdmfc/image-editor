@@ -10,6 +10,22 @@ class GalleryFolders
 {
     public const SYSTEM_ENTRADA_ID = 'entrada';
 
+    /** @var list<string> */
+    private const FOLDER_COLORS = [
+        '#6366F1',
+        '#3B82F6',
+        '#06B6D4',
+        '#10B981',
+        '#84CC16',
+        '#EAB308',
+        '#F97316',
+        '#EF4444',
+        '#EC4899',
+        '#8B5CF6',
+    ];
+
+    public const SYSTEM_FOLDER_COLOR = '#94A3B8';
+
     public function __construct(
         protected UserPhotoStorage $storage,
     ) {
@@ -32,7 +48,7 @@ class GalleryFolders
 
     /**
      * @return array{
-     *     folders: list<array{id: string, name: string, system?: bool}>,
+     *     folders: list<array{id: string, name: string, system?: bool, color?: string}>,
      *     assignments: array<string, string>,
      *     folder_order: array<string, list<string>>
      * }
@@ -65,6 +81,12 @@ class GalleryFolders
             if (! empty($folder['system'])) {
                 $entry['system'] = true;
             }
+            $color = $this->normalizeColorOrNull($folder['color'] ?? null);
+            if ($color !== null) {
+                $entry['color'] = $color;
+            } elseif (! empty($folder['system'])) {
+                $entry['color'] = self::SYSTEM_FOLDER_COLOR;
+            }
             $folders[] = $entry;
         }
 
@@ -73,6 +95,8 @@ class GalleryFolders
         } elseif (! $this->hasFolderId($folders, self::SYSTEM_ENTRADA_ID)) {
             array_unshift($folders, $this->entradaFolder());
         }
+
+        $this->assignMissingFolderColors($folders);
 
         $assignments = [];
         foreach ($data['assignments'] ?? [] as $filename => $folderId) {
@@ -124,7 +148,7 @@ class GalleryFolders
     }
 
     /**
-     * @return list<array{id: string, name: string, system?: bool}>
+     * @return list<array{id: string, name: string, system?: bool, color?: string}>
      */
     public function listFolders(string|int $userId): array
     {
@@ -424,9 +448,9 @@ class GalleryFolders
     }
 
     /**
-     * @return array{id: string, name: string}
+     * @return array{id: string, name: string, color: string}
      */
-    public function createFolder(string|int $userId, string $name): array
+    public function createFolder(string|int $userId, string $name, ?string $color = null): array
     {
         if (! $this->enabled()) {
             throw new \RuntimeException('Pastas da galeria desactivadas.');
@@ -448,14 +472,18 @@ class GalleryFolders
             $id = 'f_'.Str::lower(Str::random(10));
         }
 
-        $folder = ['id' => $id, 'name' => $name];
+        $resolvedColor = $color !== null && $color !== ''
+            ? $this->normalizeColor($color)
+            : $this->defaultColorForNewFolder($data['folders']);
+
+        $folder = ['id' => $id, 'name' => $name, 'color' => $resolvedColor];
         $data['folders'][] = $folder;
         $this->write($userId, $data);
 
         return $folder;
     }
 
-    public function renameFolder(string|int $userId, string $folderId, string $name): void
+    public function renameFolder(string|int $userId, string $folderId, string $name, ?string $color = null): void
     {
         if (! $this->enabled()) {
             throw new \RuntimeException('Pastas da galeria desactivadas.');
@@ -476,6 +504,9 @@ class GalleryFolders
         foreach ($data['folders'] as &$folder) {
             if ($folder['id'] === $folderId) {
                 $folder['name'] = $name;
+                if ($color !== null && $color !== '') {
+                    $folder['color'] = $this->normalizeColor($color);
+                }
                 $found = true;
                 break;
             }
@@ -521,7 +552,7 @@ class GalleryFolders
 
     /**
      * @return array{
-     *     folders: list<array{id: string, name: string, system?: bool}>,
+     *     folders: list<array{id: string, name: string, system?: bool, color?: string}>,
      *     assignments: array<string, string>,
      *     folder_order: array<string, list<string>>
      * }
@@ -660,7 +691,7 @@ class GalleryFolders
     }
 
     /**
-     * @return array{id: string, name: string, system: true}
+     * @return array{id: string, name: string, system: true, color: string}
      */
     private function entradaFolder(): array
     {
@@ -668,11 +699,72 @@ class GalleryFolders
             'id' => self::SYSTEM_ENTRADA_ID,
             'name' => 'Entrada',
             'system' => true,
+            'color' => self::SYSTEM_FOLDER_COLOR,
         ];
     }
 
     /**
-     * @param  list<array{id: string, name: string, system?: bool}>  $folders
+     * @param  list<array{id: string, name: string, system?: bool, color?: string}>  $folders
+     */
+    private function assignMissingFolderColors(array &$folders): void
+    {
+        $userIndex = 0;
+
+        foreach ($folders as &$folder) {
+            if (! empty($folder['system'])) {
+                if (empty($folder['color'])) {
+                    $folder['color'] = self::SYSTEM_FOLDER_COLOR;
+                }
+                continue;
+            }
+
+            if (empty($folder['color'])) {
+                $folder['color'] = self::FOLDER_COLORS[$userIndex % count(self::FOLDER_COLORS)];
+                $userIndex++;
+            }
+        }
+        unset($folder);
+    }
+
+    private function normalizeColor(string $color): string
+    {
+        $color = trim($color);
+        if (! preg_match('/^#[0-9A-Fa-f]{6}$/', $color)) {
+            throw new \InvalidArgumentException('Cor inválida.');
+        }
+
+        return strtoupper($color);
+    }
+
+    private function normalizeColorOrNull(mixed $color): ?string
+    {
+        if (! is_string($color) || trim($color) === '') {
+            return null;
+        }
+
+        try {
+            return $this->normalizeColor($color);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  list<array{id: string, name: string, system?: bool, color?: string}>  $folders
+     */
+    private function defaultColorForNewFolder(array $folders): string
+    {
+        $userFolders = array_values(array_filter(
+            $folders,
+            fn (array $folder): bool => empty($folder['system'])
+        ));
+        $index = count($userFolders) % count(self::FOLDER_COLORS);
+
+        return self::FOLDER_COLORS[$index];
+    }
+
+    /**
+     * @param  list<array{id: string, name: string, system?: bool, color?: string}>  $folders
      */
     private function hasFolderId(array $folders, string $folderId): bool
     {
