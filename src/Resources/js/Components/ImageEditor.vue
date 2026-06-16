@@ -259,9 +259,9 @@
       <!-- Área de Edição: margem inferior quando há crop/zona desfoque para as alças não ficarem sob o menu -->
       <div
         ref="viewportRef"
-        class="relative min-h-0 min-w-0 flex-1 overflow-hidden touch-none transition-[padding] duration-200"
+        class="relative min-h-0 min-w-0 flex-1 overflow-hidden touch-none"
+        :style="viewportInsetStyle"
         :class="[
-          viewportBottomPaddingClass,
           {
             'cursor-grab': viewPanHandMode && !isViewPanning,
             'cursor-grabbing': isViewPanning
@@ -274,6 +274,7 @@
         @touchmove="onViewportTouchMove"
         @touchend="onViewportTouchEnd"
         @touchcancel="onViewportTouchEnd"
+        @pointerleave="onViewportPointerLeave"
       >
         <div
           class="relative h-full w-full will-change-transform"
@@ -285,7 +286,7 @@
         >
         <div
           ref="compositionLayerRef"
-          class="relative h-full w-full"
+          class="relative h-full w-full overflow-hidden"
           :style="compositionGeometryLayerStyle"
         >
         <img
@@ -297,9 +298,9 @@
           @contextmenu.prevent="onImageContextMenu"
           @click="onImageClickUnified"
           @touchstart="onImageTouchStartUnified"
-          class="editor-view-img h-full w-full"
+          class="editor-view-img absolute"
           :class="[imageCursorClass, { 'cursor-crosshair': areaStampMode === 'copy' || areaStampMode === 'paste' }]"
-          :style="isMaskBrushModeActive ? { cursor: 'none' } : maskBrushCursorStyle"
+          :style="[compositionImageStyle, maskBrushCursorStyle]"
           @mousemove="onDrawingSurfaceMoveDrawingDraft"
           @mouseleave="onDrawingSurfaceLeaveDrawingDraft"
           @touchmove="onDrawingSurfaceMoveDrawingDraft"
@@ -617,7 +618,7 @@
             @touchstart.stop="startMovingText($event, index)"
             @contextmenu.prevent.stop="onTextContextMenu($event, text.id)"
           >
-            <div :style="textItemInnerStyle(text)">
+            <div :style="textItemInnerStyle(text, index)">
               {{ text.content }}
             </div>
             <template v-if="selectedTextIndex === index && !showingOriginal">
@@ -719,6 +720,16 @@
             >
               <img :src="ov.src" alt="" class="pointer-events-none h-full w-full" draggable="false" style="object-fit: fill" />
             </div>
+          </div>
+          <div
+            v-if="ov.caption"
+            class="pointer-events-none absolute z-[1] flex items-center justify-center overflow-visible bg-white text-center"
+            :style="overlayCaptionBandStyle(ov)"
+          >
+            <span
+              class="block w-full whitespace-pre-wrap break-words px-1"
+              :style="photoCaptionTextStyle"
+            >{{ formatCaptionText(ov.caption.number, ov.caption.description) }}</span>
           </div>
           <div
             v-show="overlayChromeVisible(ov.id)"
@@ -869,9 +880,10 @@
         <div
           v-if="isMaskBrushModeActive"
           class="absolute inset-0 z-[36] touch-none"
-          style="cursor: none"
+          :style="maskBrushCaptureLayerStyle"
           @mousedown="onMaskBrushSurfaceMouseDown"
           @pointermove="onMaskBrushSurfacePointerMove"
+          @pointerleave="hideMaskBrushHoverRing"
           @contextmenu.prevent="onMaskBrushSurfaceContextMenu"
           @touchstart="onMaskBrushSurfaceTouchStart"
         >
@@ -1383,7 +1395,7 @@
             title="Legendas — faixa branca por baixo (estilo Word)"
             @click="toggleControl('caption')"
             class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
-            :class="{ 'bg-blue-500': activeControl === 'caption' || hasActiveCaptions }"
+            :class="{ 'bg-blue-500': activeControl === 'caption' }"
           >
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h10M4 14h14M4 18h8" />
@@ -1515,6 +1527,26 @@
               </div>
               <div class="rounded-lg border border-white/15 bg-white/5 p-2">
                 <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
+                  <input v-model="textBoxBorderEnabled" type="checkbox" class="rounded" @change="onTextPanelInput" />
+                  Bordo
+                </label>
+                <div v-if="textBoxBorderEnabled" class="mt-2 space-y-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-white/70">Cor</span>
+                    <input v-model="textBoxBorderColor" type="color" class="editor-color-input" @input="onTextPanelInput" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-white/70">Espessura: {{ textBoxBorderWidth }}px</label>
+                    <input v-model.number="textBoxBorderWidth" type="range" min="1" max="8" class="w-full accent-white" @input="onTextPanelInput" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-white/70">Margem interior: {{ textBoxBorderPadding }}px</label>
+                    <input v-model.number="textBoxBorderPadding" type="range" min="0" max="24" class="w-full accent-white" @input="onTextPanelInput" />
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-lg border border-white/15 bg-white/5 p-2">
+                <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
                   <input v-model="textBgEnabled" type="checkbox" class="rounded" @change="onTextPanelInput" />
                   Fundo
                 </label>
@@ -1543,7 +1575,7 @@
             <!-- Legendas (estilo Word) -->
             <div v-else-if="activeControl === 'caption'" class="mt-2 max-h-[50vh] w-full max-w-xs space-y-3 overflow-y-auto">
               <p class="text-center text-[11px] text-white/60">
-                Uma legenda por baixo de toda a composição (foto ou folha em branco).
+                Legenda global por baixo da composição ou legendas individuais em cada imagem colada.
               </p>
               <div>
                 <label class="mb-1 block text-sm text-white">Prefixo da numeração</label>
@@ -1652,6 +1684,57 @@
                 >
                   Remover legenda
                 </button>
+              </div>
+              <div v-if="imageOverlays.length > 0" class="space-y-2 border-t border-white/15 pt-3">
+                <p class="text-center text-[11px] font-medium text-white/75">Legenda por imagem</p>
+                <p v-if="!selectedOverlayId" class="text-center text-[10px] text-white/50">
+                  Seleccione uma imagem no canvas (clique nela) para editar a legenda.
+                </p>
+                <div v-else-if="overlayCaptionDraft" class="space-y-2">
+                  <p class="text-[10px] text-white/55">
+                    Imagem seleccionada
+                    <span v-if="selectedOverlayHasCaption">(legenda activa)</span>
+                  </p>
+                  <div>
+                    <label class="mb-1 block text-sm text-white">Número</label>
+                    <input
+                      v-model.number="overlayCaptionDraft.number"
+                      type="number"
+                      min="1"
+                      max="9999"
+                      class="w-full rounded bg-white/20 p-2 text-sm text-white"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-sm text-white">Descrição</label>
+                    <textarea
+                      v-model="overlayCaptionDraft.description"
+                      rows="2"
+                      maxlength="2000"
+                      placeholder="Descrição desta imagem"
+                      class="w-full resize-y rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
+                    />
+                  </div>
+                  <p class="text-center text-[11px] text-sky-200/90">
+                    Exemplo: {{ overlayCaptionPreviewSample }}
+                  </p>
+                  <button
+                    type="button"
+                    class="w-full rounded-lg bg-sky-600 py-2.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+                    :disabled="!overlayCaptionDraftCanApply"
+                    @click="confirmOverlayCaption"
+                  >
+                    Aplicar a esta imagem
+                  </button>
+                  <button
+                    v-if="selectedOverlayHasCaption"
+                    type="button"
+                    class="w-full rounded-lg bg-red-900/50 py-2 text-xs text-white hover:bg-red-900/70"
+                    @click="removeOverlayCaption(selectedOverlayId)"
+                  >
+                    Remover legenda desta imagem
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -1822,6 +1905,22 @@
         @mousedown.stop
         @contextmenu.prevent
       >
+        <button
+          type="button"
+          class="block w-full px-3 py-2 text-left hover:bg-gray-100"
+          @click="openCaptionForOverlay(overlayContextMenu.overlayId)"
+        >
+          Editar legenda
+        </button>
+        <button
+          v-if="overlayHasCaption(overlayContextMenu.overlayId)"
+          type="button"
+          class="block w-full px-3 py-2 text-left text-red-700 hover:bg-red-50"
+          @click="removeOverlayCaption(overlayContextMenu.overlayId)"
+        >
+          Remover legenda
+        </button>
+        <div class="my-1 border-t border-gray-100" />
         <button
           type="button"
           class="block w-full px-3 py-2 text-left hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
@@ -2131,16 +2230,11 @@ const geometryAnimationEnabled = () =>
   && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const getCompositionTransformOrigin = () => {
-  const el = imageRef.value
-  if (!el?.naturalWidth) {
+  const m = compositionDisplayMetrics.value
+  if (!m.imgW) {
     return '50% 50%'
   }
-  const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
-  const imgW = el.naturalWidth * scale
-  const imgH = el.naturalHeight * scale
-  const ox = (el.clientWidth - imgW) / 2 + imgW / 2
-  const oy = (el.clientHeight - imgH) / 2 + imgH / 2
-  return `${ox}px ${oy}px`
+  return `${m.ox + m.imgW / 2}px ${m.oy + m.imgH / 2}px`
 }
 
 const beginCompositionGeometry = (transform) => {
@@ -2631,8 +2725,8 @@ const showMaskBrushSizeControl = computed(
 
 const showControls = ref(true)
 
-/** Margem inferior estável (pb-24) sempre que há barra ou ferramenta activa; sem saltos. */
-const viewportBottomPaddingClass = computed(() => {
+/** Margem inferior fixa para a barra de ferramentas — não muda com legendas. */
+const viewportChromeBottomPx = computed(() => {
   if (
     showControls.value ||
     activeControl.value ||
@@ -2647,9 +2741,14 @@ const viewportBottomPaddingClass = computed(() => {
     showBlurRegion.value ||
     showPixelateRegion.value
   ) {
-    return 'pb-24'
+    return 96
   }
-  return ''
+  return 0
+})
+
+const viewportInsetStyle = computed(() => {
+  const px = viewportChromeBottomPx.value
+  return px > 0 ? { paddingBottom: `${px}px` } : {}
 })
 const activeControl = ref(null)
 const flipHorizontal = ref(false)
@@ -2676,6 +2775,12 @@ const textBgEnabled = ref(false)
 const textBgColor = ref('#000000')
 const textBgOpacity = ref(75)
 const textBgPadding = ref(6)
+const textBoxBorderEnabled = ref(false)
+const textBoxBorderColor = ref('#000000')
+const textBoxBorderWidth = ref(2)
+const textBoxBorderPadding = ref(6)
+/** Força actualização da pré-visualização do texto ao mexer no painel. */
+const textPanelRevision = ref(0)
 const selectedTextIndex = ref(null)
 const resizingTextIndex = ref(null)
 const textResizeStart = ref(null)
@@ -2713,6 +2818,7 @@ const createDefaultCaptionSettings = () => ({
 const captionSettings = ref(createDefaultCaptionSettings())
 const photoCaptionApplied = ref(null)
 const photoCaptionDraft = ref(null)
+const overlayCaptionDraft = ref(null)
 
 const createDefaultPhotoCaptionDraft = () => ({
   number: 1,
@@ -3232,7 +3338,12 @@ const areaSelectImgStyle = computed(() => {
   } else if (w < 1 && h < 1) {
     return null
   }
-  return { left: `${left}px`, top: `${top}px`, width: `${w}px`, height: `${h}px` }
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${w}px`,
+    height: `${h}px`
+  }
 })
 
 /** Área clicável da foto (object-fit: contain) para copiar/colar. */
@@ -3361,21 +3472,8 @@ const bezierDraftPathD = computed(() => {
   return `M ${p0.x} ${p0.y} C ${p1.x} ${p1.y} ${p2.x} ${p2.y} ${h.x} ${h.y}`
 })
 
-/** object-fit: contain — px no ecrã por cada px natural da imagem. */
-const maskBrushDisplayScale = () => {
-  const el = imageRef.value
-  if (!el?.naturalWidth || !el?.naturalHeight) {
-    return 1
-  }
-  const nw = el.naturalWidth
-  const nh = el.naturalHeight
-  const rw = el.clientWidth
-  const rh = el.clientHeight
-  if (!rw || !rh) {
-    return 1
-  }
-  return Math.min(rw / nw, rh / nh)
-}
+/** px no ecrã por cada px natural da imagem (composição centrada). */
+const maskBrushDisplayScale = () => compositionDisplayMetrics.value.scale || 1
 
 /** Cursor em anel 128×128 alinhado ao raio real do traço na foto visível. */
 const buildMaskBrushCursor = (fillHex, rNatPx) => {
@@ -3459,6 +3557,16 @@ const onEditorViewportPointerMove = (e) => {
   trackMaskBrushPointer(e)
 }
 
+const hideMaskBrushHoverRing = () => {
+  maskBrushHoverPos.value = { x: 0, y: 0, visible: false }
+}
+
+const onViewportPointerLeave = () => {
+  if (isMaskBrushModeActive.value) {
+    hideMaskBrushHoverRing()
+  }
+}
+
 const maskBrushHoverRingStyle = computed(() => {
   void maskBrushRadiusNatural.value
   void imageNaturalVersion.value
@@ -3481,19 +3589,36 @@ const maskBrushHoverRingStyle = computed(() => {
   }
 })
 
+/** Esconde o cursor do SO só em cima da imagem (anel visível); fora mantém o ponteiro normal. */
+const maskBrushCaptureLayerStyle = computed(() => ({
+  cursor: maskBrushHoverPos.value.visible ? 'none' : 'default'
+}))
+
 const updateMaskBrushHoverFromEvent = (e) => {
   if (!isMaskBrushModeActive.value || resizeDirection.value) {
     return
   }
+  const vp = viewportRef.value
+  if (!vp) {
+    hideMaskBrushHoverRing()
+    return
+  }
+  const vpRect = vp.getBoundingClientRect()
+  const cx = e.touches?.[0]?.clientX ?? e.changedTouches?.[0]?.clientX ?? e.clientX
+  const cy = e.touches?.[0]?.clientY ?? e.changedTouches?.[0]?.clientY ?? e.clientY
+  if (cx < vpRect.left || cx > vpRect.right || cy < vpRect.top || cy > vpRect.bottom) {
+    hideMaskBrushHoverRing()
+    return
+  }
   const pos = clientToImgLocal(e)
-  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
+  const m = compositionDisplayMetrics.value
   const inside =
-    drawnW > 0 &&
-    drawnH > 0 &&
-    pos.x >= ox &&
-    pos.x <= ox + drawnW &&
-    pos.y >= oy &&
-    pos.y <= oy + drawnH
+    m.imgW > 0 &&
+    m.imgH > 0 &&
+    pos.x >= m.ox &&
+    pos.x <= m.ox + m.imgW &&
+    pos.y >= m.oy &&
+    pos.y <= m.oy + m.imgH
   maskBrushHoverPos.value = { x: pos.x, y: pos.y, visible: inside }
 }
 
@@ -3907,25 +4032,17 @@ const exportBlurMaskDataUrl = () => {
   return exportBrushMaskCanvas(blurBrushCanvas)
 }
 
-/** Retângulo da foto visível dentro do elemento img (object-fit: contain), em coords do elemento. */
+/** Retângulo da foto visível na camada de composição (centrado com legendas). */
 const getImageOnScreenBounds = () => {
-  const el = imageRef.value
-  if (!el) {
-    return { ox: 0, oy: 0, drawnW: 0, drawnH: 0 }
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  const m = compositionDisplayMetrics.value
+  return {
+    ox: m.ox,
+    oy: m.oy,
+    drawnW: m.imgW,
+    drawnH: m.imgH
   }
-  const nw = el.naturalWidth
-  const nh = el.naturalHeight
-  const rw = el.clientWidth
-  const rh = el.clientHeight
-  if (!nw || !nh) {
-    return { ox: 0, oy: 0, drawnW: 0, drawnH: 0 }
-  }
-  const scale = Math.min(rw / nw, rh / nh)
-  const drawnW = nw * scale
-  const drawnH = nh * scale
-  const ox = (rw - drawnW) / 2
-  const oy = (rh - drawnH) / 2
-  return { ox, oy, drawnW, drawnH }
 }
 
 const syncImageNaturalMetrics = () => {
@@ -3979,6 +4096,7 @@ const onImageLoad = () => {
 }
 
 let cropDisplaySyncRaf = 0
+let compositionLayoutSyncRaf = 0
 let cropLayoutObserver = null
 let imageLayoutObserver = null
 
@@ -3986,21 +4104,45 @@ const bumpImageDisplayLayout = () => {
   imageNaturalVersion.value++
 }
 
+/** Re-sincroniza escala/offset da composição após legendas ou reflow do painel inferior. */
+const scheduleCompositionLayoutSync = () => {
+  if (compositionLayoutSyncRaf) {
+    cancelAnimationFrame(compositionLayoutSyncRaf)
+  }
+  nextTick(() => {
+    nextTick(() => {
+      compositionLayoutSyncRaf = requestAnimationFrame(() => {
+        compositionLayoutSyncRaf = 0
+        bumpImageDisplayLayout()
+      })
+    })
+  })
+}
+
+let imageLayoutLastSize = { w: 0, h: 0 }
+
 const ensureImageLayoutObserver = () => {
+  const layer = compositionLayerRef.value
   const el = imageRef.value
-  if (!el || imageLayoutObserver) {
+  if (!layer || !el || imageLayoutObserver) {
     return
   }
   imageLayoutObserver = new ResizeObserver(() => {
     if (!imageRef.value?.naturalWidth) {
       return
     }
+    const w = layer.clientWidth
+    const h = layer.clientHeight
+    if (w === imageLayoutLastSize.w && h === imageLayoutLastSize.h) {
+      return
+    }
+    imageLayoutLastSize = { w, h }
     bumpImageDisplayLayout()
     if (showCrop.value) {
       trySyncCropDisplayNow()
     }
   })
-  imageLayoutObserver.observe(el)
+  imageLayoutObserver.observe(layer)
 }
 
 const disconnectImageLayoutObserver = () => {
@@ -4093,11 +4235,7 @@ const startCropPan = (e) => {
   if (!showCrop.value || resizeDirection.value) return
   const el = imageRef.value
   if (!el) return
-  const rect = el.getBoundingClientRect()
-  const cx = e.touches ? e.touches[0].clientX : e.clientX
-  const cy = e.touches ? e.touches[0].clientY : e.clientY
-  const x = cx - rect.left
-  const y = cy - rect.top
+  const { x, y } = clientToImgLocal(e)
   const pNat = displayPointToCropReference(x, y)
   cropPanGrabNat.value = { x: pNat.x - cropNatural.value.x, y: pNat.y - cropNatural.value.y }
   isDraggingCropPan.value = true
@@ -4114,11 +4252,7 @@ const handleCropPan = (e) => {
   }
   const el = imageRef.value
   if (!el) return
-  const rect = el.getBoundingClientRect()
-  const cx = e.touches ? e.touches[0].clientX : e.clientX
-  const cy = e.touches ? e.touches[0].clientY : e.clientY
-  const x = cx - rect.left
-  const y = cy - rect.top
+  const { x, y } = clientToImgLocal(e)
   const pNat = displayPointToCropReference(x, y)
   const refW = cropReferenceSize.value.width
   const refH = cropReferenceSize.value.height
@@ -4147,11 +4281,7 @@ const startBlurPan = (e) => {
   if (!showBlurRegion.value || blurShapeMode.value !== 'rectangle' || resizeDirection.value) return
   const el = imageRef.value
   if (!el) return
-  const rect = el.getBoundingClientRect()
-  const cx = e.touches ? e.touches[0].clientX : e.clientX
-  const cy = e.touches ? e.touches[0].clientY : e.clientY
-  const x = cx - rect.left
-  const y = cy - rect.top
+  const { x, y } = clientToImgLocal(e)
   blurPanGrab.value = { x: x - blurStart.value.x, y: y - blurStart.value.y }
   isDraggingBlurPan.value = true
   document.addEventListener('mousemove', handleBlurPan)
@@ -4167,11 +4297,7 @@ const handleBlurPan = (e) => {
   }
   const el = imageRef.value
   if (!el) return
-  const rect = el.getBoundingClientRect()
-  const cx = e.touches ? e.touches[0].clientX : e.clientX
-  const cy = e.touches ? e.touches[0].clientY : e.clientY
-  const x = cx - rect.left
-  const y = cy - rect.top
+  const { x, y } = clientToImgLocal(e)
   let nx = x - blurPanGrab.value.x
   let ny = y - blurPanGrab.value.y
   const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
@@ -4202,11 +4328,7 @@ const startPixelatePan = (e) => {
   if (!showPixelateRegion.value || pixelateShapeMode.value !== 'rectangle' || resizeDirection.value) return
   const el = imageRef.value
   if (!el) return
-  const rect = el.getBoundingClientRect()
-  const cx = e.touches ? e.touches[0].clientX : e.clientX
-  const cy = e.touches ? e.touches[0].clientY : e.clientY
-  const x = cx - rect.left
-  const y = cy - rect.top
+  const { x, y } = clientToImgLocal(e)
   pixelatePanGrab.value = { x: x - pixelateStart.value.x, y: y - pixelateStart.value.y }
   isDraggingPixelatePan.value = true
   document.addEventListener('mousemove', handlePixelatePan)
@@ -4222,11 +4344,7 @@ const handlePixelatePan = (e) => {
   }
   const el = imageRef.value
   if (!el) return
-  const rect = el.getBoundingClientRect()
-  const cx = e.touches ? e.touches[0].clientX : e.clientX
-  const cy = e.touches ? e.touches[0].clientY : e.clientY
-  const x = cx - rect.left
-  const y = cy - rect.top
+  const { x, y } = clientToImgLocal(e)
   let nx = x - pixelatePanGrab.value.x
   let ny = y - pixelatePanGrab.value.y
   const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
@@ -4259,9 +4377,7 @@ const handleResize = (e) => {
     e.preventDefault()
   }
 
-  const rect = imageRef.value.getBoundingClientRect()
-  const sx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left
-  const sy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top
+  const { x: sx, y: sy } = clientToImgLocal(e)
 
   if (resizeKind.value === 'crop') {
     applyCropResizeAt(sx, sy)
@@ -4425,7 +4541,7 @@ const toggleCrop = () => {
     scheduleCropDisplaySync()
     return
   }
-  confirmCrop()
+  cancelCrop()
 }
 
 let committedPixelateMaskCanvasCache = null
@@ -4963,7 +5079,8 @@ const transformCollageCanvasContentRotate90Ccw = async () => {
           y: next.y,
           width: next.width,
           height: next.height,
-          src: await transformOverlayDataUrl(ov.src, { rotate90Ccw: true })
+          src: await transformOverlayDataUrl(ov.src, { rotate90Ccw: true }),
+          captionAngle: ((Number(ov.captionAngle) || 0) + 90) % 360
         }
       })
     )
@@ -4989,7 +5106,8 @@ const transformCollageCanvasContentFlipHorizontal = async () => {
           ...ov,
           x: next.x,
           y: next.y,
-          src: await transformOverlayDataUrl(ov.src, { flipH: true })
+          src: await transformOverlayDataUrl(ov.src, { flipH: true }),
+          captionAngle: (360 - (Number(ov.captionAngle) || 0)) % 360
         }
       })
     )
@@ -5013,7 +5131,8 @@ const transformCollageCanvasContentFlipVertical = async () => {
           ...ov,
           x: next.x,
           y: next.y,
-          src: await transformOverlayDataUrl(ov.src, { flipV: true })
+          src: await transformOverlayDataUrl(ov.src, { flipV: true }),
+          captionAngle: (180 - (Number(ov.captionAngle) || 0) + 360) % 360
         }
       })
     )
@@ -5203,6 +5322,7 @@ const toggleControl = (control) => {
     }
     if (control === 'caption') {
       openPhotoCaptionDraft()
+      syncOverlayCaptionDraftFromSelection()
     }
     if (control !== 'text') {
       selectedTextIndex.value = null
@@ -5273,11 +5393,7 @@ const startMovingText = (e, index) => {
   e.preventDefault()
   e.stopPropagation()
 
-  const rect = imageRef.value.getBoundingClientRect()
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY
-  const px = clientX - rect.left
-  const py = clientY - rect.top
+  const { x: px, y: py } = clientToImgLocal(e)
   const t = texts.value[index]
   const lay = naturalTextToDisplayLayout(t)
   textOffset.value = { x: px - lay.left, y: py - lay.top }
@@ -5297,11 +5413,7 @@ const moveText = (e) => {
   e.preventDefault()
   e.stopPropagation()
 
-  const rect = imageRef.value.getBoundingClientRect()
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY
-  const px = clientX - rect.left
-  const py = clientY - rect.top
+  const { x: px, y: py } = clientToImgLocal(e)
   const left = px - textOffset.value.x
   const top = py - textOffset.value.y
   const nat = displayPointToNatural(Math.round(left), Math.round(top))
@@ -5341,6 +5453,12 @@ const applyTextScale = (text, scale, start) => {
   if (start.bgPadding0 > 0) {
     next.background_padding = Math.max(0, Math.min(48, Math.round(start.bgPadding0 * scale)))
   }
+  if (start.boxBorderWidth0 > 0) {
+    next.box_border_width = Math.max(1, Math.min(12, Math.round(start.boxBorderWidth0 * scale)))
+  }
+  if (start.boxBorderPadding0 > 0) {
+    next.box_border_padding = Math.max(0, Math.min(48, Math.round(start.boxBorderPadding0 * scale)))
+  }
   if (start.boxWidth0 > 0) {
     next.box_width = Math.max(24, Math.round(start.boxWidth0 * scale))
   }
@@ -5361,9 +5479,7 @@ const startTextResize = (e, index, handle) => {
     return
   }
   const box = measureTextItemDisplayBox(t)
-  const rect = imageRef.value.getBoundingClientRect()
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY
+  const { x: px0, y: py0 } = clientToImgLocal(e)
   textResizeStart.value = {
     index,
     handle,
@@ -5371,11 +5487,13 @@ const startTextResize = (e, index, handle) => {
     boxWidth0: t.box_width && t.box_width > 0 ? t.box_width : 0,
     strokeWidth0: t.stroke_width ?? 0,
     bgPadding0: t.background_padding ?? 0,
+    boxBorderWidth0: t.box_border_width ?? 0,
+    boxBorderPadding0: t.box_border_padding ?? 0,
     box0: box,
     x0: t.x,
     y0: t.y,
-    px0: clientX - rect.left,
-    py0: clientY - rect.top
+    px0,
+    py0
   }
   resizingTextIndex.value = index
   window.addEventListener('mousemove', onTextResizeMove)
@@ -5396,11 +5514,7 @@ const onTextResizeMove = (e) => {
   if (!t) {
     return
   }
-  const rect = imageRef.value.getBoundingClientRect()
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY
-  const px = clientX - rect.left
-  const py = clientY - rect.top
+  const { x: px, y: py } = clientToImgLocal(e)
   const box0 = st.box0
   const minDisp = 20
 
@@ -5468,10 +5582,16 @@ const onTextResizeMove = (e) => {
   if (selectedTextIndex.value === st.index) {
     textSize.value = naturalTextSizeToDisplay(next.size ?? 24)
     if (next.stroke_width > 0) {
-      textStrokeWidth.value = naturalTextSizeToDisplay(next.stroke_width)
+      textStrokeWidth.value = naturalUnitToDisplay(next.stroke_width)
     }
     if (next.background_padding > 0) {
-      textBgPadding.value = naturalTextPaddingToDisplay(next.background_padding)
+      textBgPadding.value = naturalUnitToDisplay(next.background_padding)
+    }
+    if (next.box_border_width > 0) {
+      textBoxBorderWidth.value = naturalUnitToDisplay(next.box_border_width)
+    }
+    if (next.box_border_padding > 0) {
+      textBoxBorderPadding.value = naturalUnitToDisplay(next.box_border_padding)
     }
   }
   scheduleApplyChanges()
@@ -5751,13 +5871,10 @@ const displayRectToNatural = (x, y, w, h) => {
   }
   const nw = el.naturalWidth
   const nh = el.naturalHeight
-  const rw = el.clientWidth
-  const rh = el.clientHeight
-  const scale = Math.min(rw / nw, rh / nh)
-  const dw = nw * scale
-  const dh = nh * scale
-  const ox = (rw - dw) / 2
-  const oy = (rh - dh) / 2
+  const m = compositionDisplayMetrics.value
+  const scale = m.scale || 1
+  const ox = m.ox
+  const oy = m.oy
   let x1 = Math.round((x - ox) / scale)
   let y1 = Math.round((y - oy) / scale)
   let x2 = Math.round((x + w - ox) / scale)
@@ -6324,13 +6441,7 @@ const setCropAspectPreset = (id) => {
 }
 
 /** Retângulo em coords naturais → estilo em px relativos ao elemento img (object-fit: contain). */
-const displayStrokeScale = computed(() => {
-  const el = imageRef.value
-  if (!el?.naturalWidth || !el.naturalHeight) {
-    return 1
-  }
-  return Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
-})
+const displayStrokeScale = computed(() => compositionDisplayMetrics.value.scale || 1)
 
 const naturalPointToDisplay = (nx, ny) => {
   void imageNaturalVersion.value
@@ -6679,18 +6790,14 @@ const drawingOverlayShapes = computed(() => {
 })
 
 const naturalRectToDisplay = (nx, ny, nw, nh) => {
-  const el = imageRef.value
-  if (!el || !el.naturalWidth) {
-    return { left: 0, top: 0, width: 0, height: 0 }
-  }
-  const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
-  const ox = (el.clientWidth - el.naturalWidth * scale) / 2
-  const oy = (el.clientHeight - el.naturalHeight * scale) / 2
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  const m = compositionDisplayMetrics.value
   return {
-    left: nx * scale + ox,
-    top: ny * scale + oy,
-    width: nw * scale,
-    height: nh * scale
+    left: nx * m.scale + m.ox,
+    top: ny * m.scale + m.oy,
+    width: nw * m.scale,
+    height: nh * m.scale
   }
 }
 
@@ -6702,7 +6809,7 @@ const naturalTextToDisplayLayout = (text) => {
     return { left: text.x, top: text.y, fontSize: text.size }
   }
   const pos = naturalRectToDisplay(text.x, text.y, 0, 0)
-  const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
+  const scale = compositionDisplayMetrics.value.scale || 1
   return {
     left: Math.round(pos.left),
     top: Math.round(pos.top),
@@ -6736,6 +6843,13 @@ const buildTextItemFromPanel = (content, x, y, existing = null) => ({
   background_color: textBgEnabled.value ? textBgColor.value : null,
   background_opacity: textBgEnabled.value ? textBgOpacity.value : null,
   background_padding: textBgEnabled.value ? displayTextPaddingToNatural(textBgPadding.value) : 0,
+  box_border_color: textBoxBorderEnabled.value ? textBoxBorderColor.value : null,
+  box_border_width: textBoxBorderEnabled.value
+    ? Math.max(1, displayUnitToNatural(textBoxBorderWidth.value))
+    : 0,
+  box_border_padding: textBoxBorderEnabled.value
+    ? displayUnitToNatural(textBoxBorderPadding.value)
+    : 0,
   ...(existing?.box_width ? { box_width: existing.box_width } : {})
 })
 
@@ -6748,20 +6862,44 @@ const loadTextSettingsFromItem = (t) => {
   textAlign.value = t.align || 'left'
   textStrokeEnabled.value = (t.stroke_width ?? 0) > 0
   textStrokeWidth.value =
-    t.stroke_width > 0 ? naturalTextSizeToDisplay(t.stroke_width) : 2
+    t.stroke_width > 0 ? naturalUnitToDisplay(t.stroke_width) : 2
   textStrokeColor.value = t.stroke_color || '#000000'
   textBgEnabled.value = Boolean(t.background_color)
   textBgColor.value = t.background_color || '#000000'
   textBgOpacity.value = t.background_opacity ?? 75
-  textBgPadding.value = t.background_padding ? naturalTextPaddingToDisplay(t.background_padding) : 6
+  textBgPadding.value = t.background_padding ? naturalUnitToDisplay(t.background_padding) : 6
+  textBoxBorderEnabled.value = Boolean(t.box_border_color) && (t.box_border_width ?? 0) > 0
+  textBoxBorderColor.value = t.box_border_color || '#000000'
+  textBoxBorderWidth.value =
+    (t.box_border_width ?? 0) > 0 ? naturalUnitToDisplay(t.box_border_width) : 2
+  textBoxBorderPadding.value = t.box_border_padding
+    ? naturalUnitToDisplay(t.box_border_padding)
+    : 6
+}
+
+const resolveActiveTextEditIndex = () => {
+  const selected = selectedTextIndex.value
+  if (selected !== null && texts.value[selected]) {
+    return selected
+  }
+  if (texts.value.length === 1) {
+    return 0
+  }
+  return null
 }
 
 const syncSelectedTextFromPanel = () => {
-  const i = selectedTextIndex.value
-  if (i === null || !texts.value[i]) {
+  const i = resolveActiveTextEditIndex()
+  if (i === null) {
     return
   }
-  texts.value[i] = buildTextItemFromPanel(textContent.value, texts.value[i].x, texts.value[i].y, texts.value[i])
+  const next = [...texts.value]
+  next[i] = buildTextItemFromPanel(textContent.value, next[i].x, next[i].y, next[i])
+  texts.value = next
+  if (selectedTextIndex.value === null) {
+    selectedTextIndex.value = i
+  }
+  textPanelRevision.value++
 }
 
 const onTextPanelInput = () => {
@@ -6898,7 +7036,10 @@ const measureTextItemNaturalBounds = (text) => {
   return displayRectToNatural(d.left, d.top, d.width, d.height)
 }
 
-const textItemInnerStyle = (text) => {
+const textItemInnerStyle = (text, index = null) => {
+  void textPanelRevision.value
+  void imageNaturalVersion.value
+  const isActive = index !== null && resolveActiveTextEditIndex() === index
   const lay = naturalTextToDisplayLayout(text)
   const boxWidthDisp =
     text.box_width && text.box_width > 0 ? naturalTextSizeToDisplay(text.box_width) : 0
@@ -6920,45 +7061,76 @@ const textItemInnerStyle = (text) => {
     style.transform = `rotate(${angle}deg)`
     style.transformOrigin = 'top left'
   }
-  if (text.background_color) {
-    const padNat = text.background_padding ?? 0
-    const padDisp = padNat > 0 ? naturalTextPaddingToDisplay(padNat) : 0
+  const bgEnabled = isActive ? textBgEnabled.value : Boolean(text.background_color)
+  if (bgEnabled) {
+    const padDisp = isActive
+      ? Math.max(0, textBgPadding.value)
+      : Math.max(0, naturalUnitToDisplay(text.background_padding ?? 0))
     style.display = 'inline-block'
-    style.backgroundColor = hexToRgba(text.background_color, (text.background_opacity ?? 75) / 100)
+    style.backgroundColor = hexToRgba(
+      isActive ? textBgColor.value : text.background_color,
+      ((isActive ? textBgOpacity.value : text.background_opacity) ?? 75) / 100
+    )
     style.padding = `${padDisp}px`
     style.borderRadius = `${Math.max(2, padDisp * 0.35)}px`
   }
+  const boxBorderEnabled = isActive
+    ? textBoxBorderEnabled.value
+    : (text.box_border_width ?? 0) > 0 && Boolean(text.box_border_color)
+  if (boxBorderEnabled) {
+    const borderDisp = Math.max(
+      1,
+      isActive ? textBoxBorderWidth.value : naturalUnitToDisplay(text.box_border_width ?? 1)
+    )
+    const borderPadDisp = Math.max(
+      0,
+      isActive ? textBoxBorderPadding.value : naturalUnitToDisplay(text.box_border_padding ?? 0)
+    )
+    const borderColor = isActive ? textBoxBorderColor.value : text.box_border_color
+    style.display = 'inline-block'
+    style.border = `${borderDisp}px solid ${borderColor}`
+    style.padding = `${borderPadDisp}px`
+    style.boxSizing = 'border-box'
+  }
   const sw = text.stroke_width ?? 0
-  if (sw > 0 && text.stroke_color) {
-    const px = Math.max(1, (sw * lay.fontSize) / 24)
-    style.webkitTextStroke = `${px}px ${text.stroke_color}`
+  const strokeEnabled = isActive ? textStrokeEnabled.value : sw > 0 && text.stroke_color
+  if (strokeEnabled) {
+    const px = Math.max(
+      1,
+      isActive ? textStrokeWidth.value : naturalUnitToDisplay(sw)
+    )
+    style.webkitTextStroke = `${px}px ${isActive ? textStrokeColor.value : text.stroke_color}`
     style.paintOrder = 'stroke fill'
   }
   return style
 }
 
-/** Tamanho escolhido no slider (px no ecrã) → px de fonte na imagem natural. */
-const displayTextSizeToNatural = (displayPx) => {
+/** px no ecrã ↔ px na imagem natural (sem mínimo de fonte). */
+const displayUnitToNatural = (displayPx) => {
   void imageNaturalVersion.value
-  const el = imageRef.value
-  if (!el?.naturalWidth) {
-    return Math.max(1, Math.round(displayPx))
-  }
-  const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
+  void compositionExtraBottomNat.value
+  const scale = compositionDisplayMetrics.value.scale || 1
   return Math.max(1, Math.round(displayPx / scale))
 }
 
-const displayTextPaddingToNatural = (displayPx) => displayTextSizeToNatural(displayPx)
+const naturalUnitToDisplay = (naturalPx) => {
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  const scale = compositionDisplayMetrics.value.scale || 1
+  return Math.max(1, Math.round(naturalPx * scale))
+}
 
-const naturalTextPaddingToDisplay = (naturalPx) => naturalTextSizeToDisplay(naturalPx)
+/** Tamanho escolhido no slider (px no ecrã) → px de fonte na imagem natural. */
+const displayTextSizeToNatural = (displayPx) => displayUnitToNatural(displayPx)
+
+const displayTextPaddingToNatural = (displayPx) => displayUnitToNatural(displayPx)
+
+const naturalTextPaddingToDisplay = (naturalPx) => naturalUnitToDisplay(naturalPx)
 
 const naturalTextSizeToDisplay = (naturalPx) => {
   void imageNaturalVersion.value
-  const el = imageRef.value
-  if (!el?.naturalWidth) {
-    return Math.max(12, Math.round(naturalPx))
-  }
-  const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
+  void compositionExtraBottomNat.value
+  const scale = compositionDisplayMetrics.value.scale || 1
   return Math.max(12, Math.round(naturalPx * scale))
 }
 
@@ -7076,18 +7248,7 @@ const overlaysPassthroughForTextTool = computed(
     !isEffectRegionToolActive.value
 )
 
-const imageDisplayScale = () => {
-  const el = imageRef.value
-  if (!el?.naturalWidth || !el?.naturalHeight) {
-    return 1
-  }
-  const rw = el.clientWidth
-  const rh = el.clientHeight
-  if (!rw || !rh) {
-    return 1
-  }
-  return Math.min(rw / el.naturalWidth, rh / el.naturalHeight)
-}
+const imageDisplayScale = () => compositionDisplayMetrics.value.scale || 1
 
 const formatCaptionText = (number, description) => {
   const prefix = (captionSettings.value.prefix || '').trim()
@@ -7152,9 +7313,97 @@ const estimateCaptionBandHeightNat = (number, description, widthNat) => {
   return Math.max(Math.ceil(fontSize * 2.2), Math.ceil(textH + padding * 2))
 }
 
+/** Espaço extra (px naturais) por baixo da imagem para legendas visíveis no ecrã. */
+const compositionExtraBottomNat = computed(() => {
+  void captionSettings.value
+  void photoCaptionApplied.value
+  void imageOverlays.value
+  const el = imageRef.value
+  if (!el?.naturalHeight) {
+    return 0
+  }
+  const nh = el.naturalHeight
+  let extra = 0
+
+  if (photoCaptionApplied.value) {
+    extra = Math.max(
+      extra,
+      estimateCaptionBandHeightNat(
+        photoCaptionApplied.value.number,
+        photoCaptionApplied.value.description,
+        el.naturalWidth
+      )
+    )
+  }
+
+  for (const ov of imageOverlays.value) {
+    if (!ov.caption) {
+      continue
+    }
+    const angle = ((Number(ov.captionAngle) || 0) % 360 + 360) % 360
+    const bandH = estimateCaptionBandHeightNat(
+      ov.caption.number,
+      ov.caption.description,
+      ov.width
+    )
+    if (angle === 0) {
+      extra = Math.max(extra, ov.y + ov.height + bandH - nh)
+    } else if (angle === 180) {
+      extra = Math.max(extra, bandH - ov.y)
+    }
+  }
+
+  return Math.max(0, Math.ceil(extra))
+})
+
+/** Escala e offset para caber imagem + legendas por baixo na área visível. */
+const compositionDisplayMetrics = computed(() => {
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  void photoCaptionApplied.value
+  void imageOverlays.value
+  const el = imageRef.value
+  if (!el?.naturalWidth || !el.naturalHeight) {
+    return { scale: 1, ox: 0, oy: 0, imgW: 0, imgH: 0 }
+  }
+  const nw = el.naturalWidth
+  const nh = el.naturalHeight
+  const extraNat = compositionExtraBottomNat.value
+  const totalNatH = nh + extraNat
+  const layer = compositionLayerRef.value
+  const rw = layer?.clientWidth || el?.clientWidth || 0
+  const rh = layer?.clientHeight || el?.clientHeight || 0
+  if (!rw || !rh) {
+    return { scale: 1, ox: 0, oy: 0, imgW: nw, imgH: nh }
+  }
+  const scale = Math.min(rw / nw, rh / totalNatH)
+  const imgW = nw * scale
+  const imgH = nh * scale
+  const ox = (rw - imgW) / 2
+  const oy = (rh - totalNatH * scale) / 2
+  return { scale, ox, oy, imgW, imgH }
+})
+
+const compositionImageStyle = computed(() => {
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  const m = compositionDisplayMetrics.value
+  if (!m.imgW) {
+    return { left: '0', top: '0', width: '100%', height: '100%', objectFit: 'contain' }
+  }
+  return {
+    left: `${m.ox}px`,
+    top: `${m.oy}px`,
+    width: `${m.imgW}px`,
+    height: `${m.imgH}px`,
+    objectFit: 'contain'
+  }
+})
+
 const photoCaptionBandStyle = computed(() => {
   void captionSettings.value
   void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
   if (!photoCaptionApplied.value) {
     return { display: 'none' }
   }
@@ -7162,17 +7411,17 @@ const photoCaptionBandStyle = computed(() => {
   if (!el?.naturalWidth || !el?.naturalHeight) {
     return { display: 'none' }
   }
+  const m = compositionDisplayMetrics.value
   const bandNat = estimateCaptionBandHeightNat(
     photoCaptionApplied.value.number,
     photoCaptionApplied.value.description,
     el.naturalWidth
   )
-  const d = naturalRectToDisplay(0, el.naturalHeight, el.naturalWidth, bandNat)
   return {
-    left: `${d.left}px`,
-    top: `${d.top}px`,
-    width: `${d.width}px`,
-    height: `${d.height}px`
+    left: `${m.ox}px`,
+    top: `${m.oy + m.imgH}px`,
+    width: `${m.imgW}px`,
+    height: `${Math.max(1, bandNat * m.scale)}px`
   }
 })
 
@@ -7186,7 +7435,125 @@ const photoCaptionTextStyle = computed(() => {
   }
 })
 
-const hasActiveCaptions = computed(() => photoCaptionApplied.value !== null)
+const hasActiveCaptions = computed(
+  () => photoCaptionApplied.value !== null || imageOverlays.value.some((o) => o.caption)
+)
+
+const overlayHasCaption = (overlayId) => {
+  const ov = imageOverlays.value.find((o) => o.id === overlayId)
+  return Boolean(ov?.caption)
+}
+
+const selectedOverlayHasCaption = computed(() =>
+  selectedOverlayId.value ? overlayHasCaption(selectedOverlayId.value) : false
+)
+
+const nextOverlayCaptionNumber = () => {
+  const nums = imageOverlays.value
+    .filter((o) => o.caption)
+    .map((o) => Number(o.caption.number) || 0)
+  return nums.length ? Math.max(...nums) + 1 : 1
+}
+
+const syncOverlayCaptionDraftFromSelection = () => {
+  if (!selectedOverlayId.value) {
+    overlayCaptionDraft.value = null
+    return
+  }
+  const ov = imageOverlays.value.find((o) => o.id === selectedOverlayId.value)
+  if (!ov) {
+    overlayCaptionDraft.value = null
+    return
+  }
+  overlayCaptionDraft.value = ov.caption
+    ? clonePhotoCaption(ov.caption)
+    : { number: nextOverlayCaptionNumber(), description: '' }
+}
+
+const overlayCaptionPreviewSample = computed(() => {
+  const n = overlayCaptionDraft.value?.number ?? 1
+  const desc = overlayCaptionDraft.value?.description ?? 'Descrição desta imagem'
+  return formatCaptionText(n, desc || 'Descrição desta imagem')
+})
+
+const overlayCaptionDraftCanApply = computed(() => {
+  const n = Number(overlayCaptionDraft.value?.number)
+  return Number.isFinite(n) && n >= 1 && n <= 9999 && Boolean(selectedOverlayId.value)
+})
+
+const overlayCaptionBandStyle = (ov) => {
+  void captionSettings.value
+  void imageNaturalVersion.value
+  if (!ov?.caption) {
+    return { display: 'none' }
+  }
+  const angle = ((Number(ov.captionAngle) || 0) % 360 + 360) % 360
+  const bandNat = estimateCaptionBandHeightNat(
+    ov.caption.number,
+    ov.caption.description,
+    ov.width
+  )
+  const overlayDisp = naturalRectToDisplay(0, 0, ov.width, ov.height)
+  const bandDisp = naturalRectToDisplay(0, 0, ov.width, bandNat)
+  const bandH = Math.max(1, bandDisp.height)
+  const originX = Math.max(1, overlayDisp.width) / 2
+  return {
+    left: 0,
+    top: '100%',
+    width: '100%',
+    height: `${bandH}px`,
+    transformOrigin: `${originX}px 0`,
+    transform: angle ? `rotate(${angle}deg)` : 'none'
+  }
+}
+
+const confirmOverlayCaption = () => {
+  if (!overlayCaptionDraftCanApply.value || !overlayCaptionDraft.value || !selectedOverlayId.value) {
+    return
+  }
+  const idx = imageOverlays.value.findIndex((o) => o.id === selectedOverlayId.value)
+  if (idx < 0) {
+    return
+  }
+  const updated = [...imageOverlays.value]
+  updated[idx] = {
+    ...updated[idx],
+    caption: {
+      number: Math.max(1, Math.round(overlayCaptionDraft.value.number)),
+      description: overlayCaptionDraft.value.description || ''
+    },
+    captionAngle: Number(updated[idx].captionAngle) || 0
+  }
+  imageOverlays.value = updated
+  recordEditHistory()
+  scheduleCompositionLayoutSync()
+  scheduleApplyChanges()
+}
+
+const removeOverlayCaption = (overlayId) => {
+  const idx = imageOverlays.value.findIndex((o) => o.id === overlayId)
+  if (idx < 0) {
+    return
+  }
+  const updated = [...imageOverlays.value]
+  updated[idx] = { ...updated[idx], caption: null }
+  imageOverlays.value = updated
+  if (selectedOverlayId.value === overlayId) {
+    syncOverlayCaptionDraftFromSelection()
+  }
+  closeOverlayContextMenu()
+  recordEditHistory()
+  scheduleCompositionLayoutSync()
+  scheduleApplyChanges()
+}
+
+const openCaptionForOverlay = (overlayId) => {
+  selectedOverlayId.value = overlayId
+  activeControl.value = 'caption'
+  openPhotoCaptionDraft()
+  syncOverlayCaptionDraftFromSelection()
+  closeOverlayContextMenu()
+}
 
 const buildCaptionSettingsPayload = () => ({
   prefix: captionSettings.value.prefix || '',
@@ -7198,13 +7565,24 @@ const buildCaptionSettingsPayload = () => ({
 })
 
 const mapImageOverlaysPayload = () =>
-  imageOverlays.value.map(({ src, x, y, width, height }) => ({
-    src,
-    x: Math.round(x),
-    y: Math.round(y),
-    width: Math.round(width),
-    height: Math.round(height)
-  }))
+  imageOverlays.value.map((ov) => {
+    const { src, x, y, width, height, caption } = ov
+    const item = {
+      src,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.round(width),
+      height: Math.round(height)
+    }
+    if (caption) {
+      item.caption = {
+        number: Math.max(1, Math.round(caption.number || 1)),
+        description: caption.description || ''
+      }
+      item.caption_angle = ((Number(ov.captionAngle) || 0) % 360 + 360) % 360
+    }
+    return item
+  })
 
 const captionPrefixPresetLabel = (preset) => {
   if (preset === '') {
@@ -7279,6 +7657,7 @@ const confirmPhotoCaption = () => {
   }
   activeControl.value = null
   recordEditHistory()
+  scheduleCompositionLayoutSync()
 }
 
 const removePhotoCaption = () => {
@@ -7286,6 +7665,7 @@ const removePhotoCaption = () => {
   photoCaptionDraft.value = createDefaultPhotoCaptionDraft()
   activeControl.value = null
   recordEditHistory()
+  scheduleCompositionLayoutSync()
 }
 
 const shrinkDataUrlForOverlay = (dataUrl, maxSide = 1200) => {
@@ -7850,17 +8230,8 @@ const clientToImgLocal = (e) => {
   return stagePointFromViewport(p.x, p.y)
 }
 
-/** Posição do cursor em coords do elemento <img> (como blur/crop). */
-const pointerOnImageElement = (e) => {
-  const el = imageRef.value
-  if (!el) {
-    return { x: 0, y: 0 }
-  }
-  const rect = el.getBoundingClientRect()
-  const cx = e.touches?.[0]?.clientX ?? e.changedTouches?.[0]?.clientX ?? e.clientX
-  const cy = e.touches?.[0]?.clientY ?? e.changedTouches?.[0]?.clientY ?? e.clientY
-  return { x: cx - rect.left, y: cy - rect.top }
-}
+/** Posição do cursor em coords da camada de composição. */
+const pointerOnImageElement = (e) => clientToImgLocal(e)
 
 const loadImageElement = (src) =>
   new Promise((resolve, reject) => {
@@ -8927,6 +9298,10 @@ const syncStateAfterSave = (url) => {
   textBgColor.value = '#000000'
   textBgOpacity.value = 75
   textBgPadding.value = 6
+  textBoxBorderEnabled.value = false
+  textBoxBorderColor.value = '#000000'
+  textBoxBorderWidth.value = 2
+  textBoxBorderPadding.value = 6
   imageOverlays.value = []
   canvasLayerStack.value = []
   selectedOverlayId.value = null
@@ -9114,6 +9489,12 @@ watch(hasChanges, (changed) => {
   }
 })
 
+watch(selectedOverlayId, () => {
+  if (activeControl.value === 'caption') {
+    syncOverlayCaptionDraftFromSelection()
+  }
+})
+
 const tryPasteAreaStamp = (e) => {
   if (areaStampMode.value !== 'paste' || !areaClipboard.value) {
     return false
@@ -9141,10 +9522,11 @@ const positionText = (e) => {
   const pos = clientToImgLocal(e)
   const pNat = displayPointToNatural(Math.round(pos.x), Math.round(pos.y))
 
-  selectedTextIndex.value = null
   const textItem = buildTextItemFromPanel(textContent.value, pNat.x, pNat.y)
   texts.value.push(textItem)
   pushCanvasLayer('text', textItem.id)
+  selectedTextIndex.value = texts.value.length - 1
+  loadTextSettingsFromItem(texts.value[selectedTextIndex.value])
   textContent.value = ''
   void applyChanges().then(() => {
     nextTick(() => recordEditHistory())
@@ -9274,12 +9656,16 @@ watch(showCrop, (active) => {
   }
 })
 
-watch(viewportBottomPaddingClass, () => {
-  nextTick(() => {
-    if (showCrop.value) {
-      scheduleCropDisplaySync()
-    }
-  })
+watch(compositionExtraBottomNat, (extra, prev) => {
+  if (extra !== prev) {
+    scheduleCompositionLayoutSync()
+  }
+})
+
+watch(activeControl, (control, prev) => {
+  if (control === 'caption' || prev === 'caption') {
+    scheduleCompositionLayoutSync()
+  }
 })
 
 onUnmounted(() => {
@@ -9309,6 +9695,10 @@ onUnmounted(() => {
   stopCropPan()
   disconnectCropLayoutObserver()
   disconnectImageLayoutObserver()
+  if (compositionLayoutSyncRaf) {
+    cancelAnimationFrame(compositionLayoutSyncRaf)
+    compositionLayoutSyncRaf = 0
+  }
   cancelCropDisplaySyncRaf()
   clearPreviewDebounceTimer()
 })
@@ -9321,8 +9711,6 @@ defineExpose({
 
 <style scoped>
 .editor-view-img {
-  width: 100%;
-  height: 100%;
   object-fit: contain;
 }
 

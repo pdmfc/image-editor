@@ -1075,7 +1075,113 @@ class ImageService
             } catch (\Throwable) {
                 continue;
             }
+
+            $caption = $item['caption'] ?? null;
+            if (is_array($caption) && isset($caption['number'])) {
+                try {
+                    $captionAngle = ((int) ($item['caption_angle'] ?? 0) % 360 + 360) % 360;
+                    $this->drawOverlayCaptionBand(
+                        $image,
+                        $tx,
+                        $ty,
+                        $tw,
+                        $th,
+                        $caption,
+                        $this->resolveCaptionConfig($data),
+                        $captionAngle
+                    );
+                } catch (\Throwable) {
+                    // Ignora legenda inválida neste overlay
+                }
+            }
         }
+    }
+
+    /**
+     * Faixa branca com legenda por baixo de um overlay (coordenadas da imagem final).
+     *
+     * @param  array{number: int, description?: string}  $caption
+     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}  $config
+     */
+    private function drawOverlayCaptionBand(
+        ImageInterface $image,
+        int $tx,
+        int $ty,
+        int $tw,
+        int $th,
+        array $caption,
+        array $config,
+        int $angle = 0
+    ): void {
+        $number = max(1, (int) ($caption['number'] ?? 1));
+        $description = trim((string) ($caption['description'] ?? ''));
+        $captionText = $this->formatCaptionText($config, $number, $description);
+
+        if ($captionText === '') {
+            return;
+        }
+
+        $angle = (($angle % 360) + 360) % 360;
+        $fontSize = (float) $config['font_size'];
+        $padding = (int) $config['band_padding'];
+        $edgeLength = ($angle === 90 || $angle === 270) ? $th : $tw;
+        $innerW = max(1, $edgeLength - (2 * $padding));
+        $wrapped = $this->wrapCaptionToWidth($captionText, $fontSize, $innerW);
+        $box = $this->estimateTextBox($wrapped, $fontSize);
+        $bandThickness = max((int) ceil($fontSize * 2.2), $box['height'] + (2 * $padding));
+
+        if ($angle === 90) {
+            $bandX = $tx + $tw;
+            $bandY = $ty;
+            $bandW = $bandThickness;
+            $bandH = $th;
+            $textX = $bandX + (int) floor($bandThickness / 2);
+            $textY = $ty + (int) floor($th / 2);
+        } elseif ($angle === 180) {
+            $bandX = $tx;
+            $bandY = $ty - $bandThickness;
+            $bandW = $tw;
+            $bandH = $bandThickness;
+            $textX = $tx + (int) floor($tw / 2);
+            $textY = $bandY + $padding;
+        } elseif ($angle === 270) {
+            $bandX = $tx - $bandThickness;
+            $bandY = $ty;
+            $bandW = $bandThickness;
+            $bandH = $th;
+            $textX = $bandX + (int) floor($bandThickness / 2);
+            $textY = $ty + (int) floor($th / 2);
+        } else {
+            $bandX = $tx;
+            $bandY = $ty + $th;
+            $bandW = $tw;
+            $bandH = $bandThickness;
+            $textX = $tx + (int) floor($tw / 2);
+            $textY = $bandY + $padding;
+        }
+
+        $image->drawRectangle(function ($r) use ($bandW, $bandH, $bandX, $bandY): void {
+            $r->size($bandW, $bandH)->at($bandX, $bandY);
+            $r->background('#ffffff');
+        });
+
+        $textPayload = [
+            'content' => $wrapped,
+            'size' => $fontSize,
+            'color' => $config['color'],
+            'bold' => $config['bold'],
+            'align' => 'center',
+            'angle' => (float) $angle,
+        ];
+
+        $image->text(
+            $wrapped,
+            $textX,
+            $textY,
+            function (FontFactory $font) use ($textPayload, $image): void {
+                $this->configureTextFont($font, $textPayload, $image);
+            }
+        );
     }
 
     private function applyTextItem(ImageInterface $image, array $text): void
@@ -1096,6 +1202,12 @@ class ImageService
 
         if (is_string($bgColor) && $bgColor !== '') {
             $this->drawTextBackground($image, $text, $content, $x, $y, $bgColor);
+        }
+
+        $borderColor = $text['box_border_color'] ?? null;
+        $borderWidth = (int) ($text['box_border_width'] ?? 0);
+        if ($borderWidth > 0 && is_string($borderColor) && $borderColor !== '') {
+            $this->drawTextBoxBorder($image, $text, $content, $x, $y, $borderColor, $borderWidth);
         }
 
         $lines = preg_split('/\n/', $content) ?: [''];
@@ -1223,9 +1335,56 @@ class ImageService
         int $y,
         string $bgColor
     ): void {
-        $box = $this->measureTextBlockBox($content, $text, $image);
-        $padding = max(0, min(48, (int) ($text['background_padding'] ?? 6)));
+        $rect = $this->textBlockRect($content, $text, $image, (int) ($text['background_padding'] ?? 6));
+        if ($rect === null) {
+            return;
+        }
+
         $opacity = max(5, min(100, (int) ($text['background_opacity'] ?? 75)));
+        $fill = $this->colorWithOpacity($bgColor, $opacity);
+
+        $image->drawRectangle(function ($r) use ($rect, $fill): void {
+            $r->size($rect['width'], $rect['height'])->at($rect['x'], $rect['y']);
+            $r->background($fill);
+        });
+    }
+
+    private function drawTextBoxBorder(
+        ImageInterface $image,
+        array $text,
+        string $content,
+        int $x,
+        int $y,
+        string $borderColor,
+        int $borderWidth
+    ): void {
+        $padding = max(0, min(48, (int) ($text['box_border_padding'] ?? 4)));
+        $rect = $this->textBlockRect($content, $text, $image, $padding);
+        if ($rect === null) {
+            return;
+        }
+
+        $borderWidth = max(1, min(12, $borderWidth));
+
+        $image->drawRectangle(function ($r) use ($rect, $borderColor, $borderWidth): void {
+            $r->size($rect['width'], $rect['height'])->at($rect['x'], $rect['y']);
+            $r->border($borderColor, $borderWidth);
+        });
+    }
+
+    /**
+     * @return array{x: int, y: int, width: int, height: int}|null
+     */
+    private function textBlockRect(
+        string $content,
+        array $text,
+        ImageInterface $image,
+        int $padding
+    ): ?array {
+        $box = $this->measureTextBlockBox($content, $text, $image);
+        $padding = max(0, min(48, $padding));
+        $x = (int) ($text['x'] ?? 0);
+        $y = (int) ($text['y'] ?? 0);
 
         $align = (string) ($text['align'] ?? 'left');
         $bx = $x;
@@ -1241,15 +1400,15 @@ class ImageService
         $rectH = min($image->height() - $rectY, $box['height'] + (2 * $padding));
 
         if ($rectW < 1 || $rectH < 1) {
-            return;
+            return null;
         }
 
-        $fill = $this->colorWithOpacity($bgColor, $opacity);
-
-        $image->drawRectangle(function ($r) use ($rectX, $rectY, $rectW, $rectH, $fill): void {
-            $r->size($rectW, $rectH)->at($rectX, $rectY);
-            $r->background($fill);
-        });
+        return [
+            'x' => $rectX,
+            'y' => $rectY,
+            'width' => $rectW,
+            'height' => $rectH,
+        ];
     }
 
     private function configureTextFont(FontFactory $font, array $text, ImageInterface $image): void
