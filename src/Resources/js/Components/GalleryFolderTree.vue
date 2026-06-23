@@ -24,7 +24,8 @@ const props = defineProps({
   canDragPhotoToFolder: { type: Function, required: true },
   canDragPhotoToCanvas: { type: Function, required: true },
   folderPhotoCount: { type: Function, required: true },
-  photoFolderId: { type: Function, required: true }
+  photoFolderId: { type: Function, required: true },
+  liveThumbUrls: { type: Object, default: () => ({}) }
 })
 
 const emit = defineEmits([
@@ -68,6 +69,13 @@ const allExpanded = computed(
 
 const anyExpanded = computed(() => props.expandedBranches.size > 0)
 
+const photoThumbnailUrl = (photo) => {
+  if (!photo?.url) {
+    return ''
+  }
+  return props.liveThumbUrls[photo.filename] || photo.url
+}
+
 const isReorderActiveInFolder = (folderId) =>
   props.reorderMode && props.reorderFolderId === folderId
 
@@ -75,9 +83,8 @@ const isBulkActiveInFolder = (folderId) =>
   props.bulkSelectMode && props.bulkFolderId === folderId
 
 const isThumbnailDraggable = (photo) =>
-  (props.canDragPhotoToFolder(photo) || props.canDragPhotoToCanvas(photo)) &&
-  !props.bulkSelectMode &&
-  !props.reorderMode
+  props.canDragPhotoToCanvas(photo) ||
+  (props.canDragPhotoToFolder(photo) && !props.bulkSelectMode && !props.reorderMode)
 
 const folderAccentStyle = (folder) => ({
   color: folderDisplayColor(folder)
@@ -101,6 +108,11 @@ const folderButtonStyle = (folder) => {
 
 const onPhotoPointerDown = (folderId, index, event) => {
   if (!isReorderActiveInFolder(folderId)) {
+    return
+  }
+
+  const photo = photosInFolder(folderId)[index]
+  if (props.canDragPhotoToCanvas(photo)) {
     return
   }
 
@@ -368,7 +380,7 @@ onUnmounted(() => {
                   ? 'cursor-grab touch-none active:cursor-grabbing'
                   : 'cursor-pointer'
               ]"
-              :draggable="!reorderMode && isThumbnailDraggable(photo)"
+              :draggable="isThumbnailDraggable(photo)"
               @click="emit('thumbnail-click', photo)"
               @keydown.enter.prevent="emit('thumbnail-click', photo)"
               @keydown.space.prevent="emit('thumbnail-click', photo)"
@@ -409,7 +421,7 @@ onUnmounted(() => {
                 :class="photo.is_blank_canvas ? 'thumbnail-checker' : 'bg-gray-100'"
               >
                 <img
-                  :src="photo.url"
+                  :src="photoThumbnailUrl(photo)"
                   :alt="photo.filename"
                   class="pointer-events-none h-full w-full object-cover"
                   :class="{ 'ring-2 ring-inset ring-sky-400/80': photo.is_blank_canvas }"

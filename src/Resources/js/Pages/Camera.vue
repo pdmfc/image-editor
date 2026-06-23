@@ -349,6 +349,7 @@
               :can-drag-photo-to-canvas="canDragPhotoToCanvas"
               :folder-photo-count="folderPhotoCount"
               :photo-folder-id="photoFolderId"
+              :live-thumb-urls="galleryLiveThumbUrls"
               @reorder-pointer-down="onFolderReorderPointerDown"
               @reorder-toggle="toggleReorderSelection"
               @toggle-branch="toggleFolderBranch"
@@ -522,7 +523,7 @@
                     ? 'cursor-grab active:cursor-grabbing touch-none'
                     : 'cursor-pointer'
                 ]"
-                :draggable="!reorderMode && isThumbnailDraggable(photo)"
+                :draggable="isThumbnailDraggable(photo)"
                 @click="onThumbnailClick(photo)"
                 @keydown.enter.prevent="onThumbnailClick(photo)"
                 @keydown.space.prevent="onThumbnailClick(photo)"
@@ -567,7 +568,7 @@
                   :class="photo.is_blank_canvas ? 'thumbnail-checker' : 'bg-gray-100'"
                 >
                   <img
-                    :src="photo.url"
+                    :src="photoUrlForGallery(photo)"
                     :alt="photo.filename"
                     class="pointer-events-none h-full w-full object-cover"
                     :class="{ 'ring-2 ring-inset ring-sky-400/80': photo.is_blank_canvas }"
@@ -667,6 +668,7 @@
           @save="handleSaveEdit"
           @use-in-form="usePhotoInForm"
           @gallery-navigate="onGalleryNavigate"
+          @preview-updated="onEditorPreviewUpdated"
           @error="(msg) => showNotification('error', 'Erro', msg)"
         />
         <div
@@ -856,18 +858,16 @@ const collapseAllFolderBranches = () => {
   expandedFolderBranches.value = new Set()
 }
 
-const syncExpandedFolderBranches = () => {
+const pruneExpandedFolderBranches = () => {
   if (!galleryFoldersEnabled.value) {
+    expandedFolderBranches.value = new Set()
     return
   }
 
-  const next = new Set(expandedFolderBranches.value)
-  for (const folder of folders.value) {
-    if (photosInFolder(folder.id).length > 0) {
-      next.add(folder.id)
-    }
-  }
-  expandedFolderBranches.value = next
+  const validIds = new Set(folders.value.map((folder) => folder.id))
+  expandedFolderBranches.value = new Set(
+    [...expandedFolderBranches.value].filter((id) => validIds.has(id))
+  )
 }
 
 /** Lista linear para navegação no editor (←/→), independente de pastas expandidas. */
@@ -1026,7 +1026,9 @@ const blankCanvasTitle = computed(() => {
 })
 const creatingBlank = ref(false)
 const imageEditorRef = ref(null)
+const galleryLiveThumbUrls = ref({})
 const isDropTargetActive = ref(false)
+const pendingCanvasDrag = ref(null)
 const bulkSelectMode = ref(false)
 const bulkSelectedFilenames = ref([])
 const bulkDeleting = ref(false)
@@ -1097,9 +1099,19 @@ const canDragPhotoToFolder = (photo) =>
   !reorderMode.value
 
 const isThumbnailDraggable = (photo) =>
-  (canDragPhotoToCanvas(photo) || canDragPhotoToFolder(photo)) &&
-  !bulkSelectMode.value &&
-  !reorderMode.value
+  canDragPhotoToCanvas(photo) ||
+  (canDragPhotoToFolder(photo) && !bulkSelectMode.value && !reorderMode.value)
+
+const transferHasCanvasDrag = (event) => {
+  if (pendingCanvasDrag.value) {
+    return true
+  }
+  const types = event?.dataTransfer?.types
+  if (!types) {
+    return false
+  }
+  return Array.from(types).includes(DRAG_PHOTO_MIME)
+}
 
 const folderDragGhostImage = (() => {
   if (typeof Image === 'undefined') {
@@ -1171,7 +1183,13 @@ const onFolderPhotoDragEnd = () => {
 }
 
 const onGalleryThumbnailDragStart = (_index, event, photo) => {
-  if (reorderMode.value) {
+  pendingCanvasDrag.value = null
+
+  if (reorderMode.value && !canDragPhotoToCanvas(photo)) {
+    event.preventDefault()
+    return
+  }
+  if (bulkSelectMode.value && !canDragPhotoToCanvas(photo)) {
     event.preventDefault()
     return
   }
@@ -1184,10 +1202,10 @@ const onGalleryThumbnailDragStart = (_index, event, photo) => {
   }
 
   if (canDragPhotoToCanvas(photo)) {
-    event.dataTransfer.setData(
-      DRAG_PHOTO_MIME,
-      JSON.stringify({ url: photo.url, filename: photo.filename })
-    )
+    const payload = { url: photo.url, filename: photo.filename }
+    pendingCanvasDrag.value = payload
+    event.dataTransfer.setData(DRAG_PHOTO_MIME, JSON.stringify(payload))
+    event.dataTransfer.setData('text/plain', photo.filename)
     allowed = true
   }
 
@@ -1209,6 +1227,7 @@ const onGalleryThumbnailDragStart = (_index, event, photo) => {
 }
 
 const onGalleryThumbnailDragEnd = () => {
+  pendingCanvasDrag.value = null
   onFolderPhotoDragEnd()
   onThumbnailDragEnd()
 }
@@ -1217,7 +1236,8 @@ const onEditorDragOver = (event) => {
   if (!isBlankCanvasSelected.value) {
     return
   }
-  if (event.dataTransfer?.types?.includes(DRAG_PHOTO_MIME)) {
+  if (transferHasCanvasDrag(event)) {
+    event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
     isDropTargetActive.value = true
   }
@@ -1228,20 +1248,35 @@ const onEditorDragLeave = () => {
 }
 
 const onEditorDrop = async (event) => {
+  event.stopPropagation()
   isDropTargetActive.value = false
   if (!isBlankCanvasSelected.value || !imageEditorRef.value) {
+    pendingCanvasDrag.value = null
     return
   }
-  const raw = event.dataTransfer?.getData(DRAG_PHOTO_MIME)
-  if (!raw) {
+
+  let payload = pendingCanvasDrag.value
+  if (!payload) {
+    const raw = event.dataTransfer?.getData(DRAG_PHOTO_MIME)
+    if (raw) {
+      try {
+        payload = JSON.parse(raw)
+      } catch {
+        payload = null
+      }
+    }
+  }
+
+  pendingCanvasDrag.value = null
+
+  if (!payload?.url) {
+    return
+  }
+  if (payload.filename === selectedPhoto.value?.filename) {
     return
   }
   try {
-    const { url, filename } = JSON.parse(raw)
-    if (!url || filename === selectedPhoto.value?.filename) {
-      return
-    }
-    await imageEditorRef.value.addImageOverlayFromUrl(url)
+    await imageEditorRef.value.addImageOverlayFromUrl(payload.url)
   } catch (error) {
     console.error(error)
     showNotification('error', 'Erro', 'Não foi possível adicionar a imagem à folha')
@@ -1294,6 +1329,36 @@ const photoUrlWithCacheBust = (photo) => {
   const version =
     photo.timestamp != null ? String(photo.timestamp) : String(Date.now())
   return `${baseUrl}?v=${version}`
+}
+
+const photoUrlForGallery = (photo) => {
+  if (!photo?.filename) {
+    return photo?.url ?? ''
+  }
+  return galleryLiveThumbUrls.value[photo.filename] || photo.url || ''
+}
+
+const clearGalleryLiveThumb = (filename) => {
+  if (!filename || !galleryLiveThumbUrls.value[filename]) {
+    return
+  }
+  const next = { ...galleryLiveThumbUrls.value }
+  delete next[filename]
+  galleryLiveThumbUrls.value = next
+}
+
+const onEditorPreviewUpdated = ({ filename, url }) => {
+  if (!filename) {
+    return
+  }
+  if (!url) {
+    clearGalleryLiveThumb(filename)
+    return
+  }
+  galleryLiveThumbUrls.value = {
+    ...galleryLiveThumbUrls.value,
+    [filename]: url
+  }
 }
 
 const withCacheBustedUrl = (photo) => {
@@ -1734,6 +1799,15 @@ const startReorderPointerDrag = ({ folderId, index, event, list, listEl }) => {
 }
 
 const onReorderPointerDown = (index, event) => {
+  if (!reorderMode.value) {
+    return
+  }
+
+  const photo = displayPhotos.value[index]
+  if (canDragPhotoToCanvas(photo)) {
+    return
+  }
+
   startReorderPointerDrag({
     folderId: null,
     index,
@@ -1822,7 +1896,7 @@ const applyFoldersFromResponse = (data) => {
 
   folders.value = Array.isArray(data?.folders) ? data.folders : []
   ensureNewPhotoFolderId()
-  syncExpandedFolderBranches()
+  pruneExpandedFolderBranches()
 }
 
 const focusFolderEditorInput = () => {
@@ -2066,9 +2140,7 @@ const movePhotosToFolder = async (filenames, folderId, options = {}) => {
     }
 
     if (options.expandFolder) {
-      const next = new Set(expandedFolderBranches.value)
-      next.add(folderId)
-      expandedFolderBranches.value = next
+      openFolderBranch(folderId)
     }
 
     const message =
@@ -2507,6 +2579,7 @@ const confirmDelete = async (photo) => {
       data: { filename: photo.filename, ...userParams() }
     })
     await loadPhotos({ autoSelectFirst: wasSelected })
+    clearGalleryLiveThumb(photo.filename)
     if (wasSelected && photos.value.length > 0) {
       selectedPhoto.value = photos.value[0]
     } else if (wasSelected) {
@@ -2668,6 +2741,9 @@ const handleSaveEdit = async (payload) => {
       autoSelectFirst: false
     })
     const fn = keepFilename || selectedPhoto.value?.filename
+    if (fn) {
+      clearGalleryLiveThumb(fn)
+    }
     const photo = fn ? photos.value.find((p) => p.filename === fn) : selectedPhoto.value
     const useInForm = Boolean(payload && typeof payload === 'object' && payload.useInForm)
 

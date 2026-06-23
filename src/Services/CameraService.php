@@ -406,7 +406,9 @@ class CameraService
                 $extension = 'jpg';
             }
 
-            $newFilename = 'photo_'.time().'_'.uniqid().'.'.$extension;
+            $isBlankCanvas = str_starts_with($safeName, 'canvas_');
+            $prefix = $isBlankCanvas ? 'canvas_' : 'photo_';
+            $newFilename = $prefix.time().'_'.uniqid().'.'.$extension;
             $newPath = $this->storage->filePath($userId, $newFilename);
 
             if (! Storage::disk($this->disk())->copy($filepath, $newPath)) {
@@ -422,6 +424,7 @@ class CameraService
                 'url' => $this->storage->photoUrl($userId, $newFilename),
                 'path' => $newPath,
                 'timestamp' => is_file($fullPath) ? filemtime($fullPath) : time(),
+                'is_blank_canvas' => $isBlankCanvas,
             ];
 
             if ($this->galleryFolders->enabled()) {

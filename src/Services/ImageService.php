@@ -879,7 +879,7 @@ class ImageService
             return $image;
         }
 
-        $config = $this->resolveCaptionConfig($data);
+        $config = $this->resolveCaptionConfigForCanvas($data);
         $number = max(1, (int) ($cap['number'] ?? 1));
         $description = trim((string) ($cap['description'] ?? ''));
         $captionText = $this->formatCaptionText($config, $number, $description);
@@ -896,12 +896,14 @@ class ImageService
     }
 
     /**
-     * @return array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}
+     * @return array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}
      */
     private function resolveCaptionConfig(Request $data): array
     {
         $raw = $data->input('caption_settings');
         $settings = is_array($raw) ? $raw : [];
+        $borderWidth = max(0, min(12, (int) ($settings['band_border_width'] ?? 0)));
+        $borderColor = trim((string) ($settings['band_border_color'] ?? ''));
 
         return [
             'prefix' => trim((string) ($settings['prefix'] ?? 'Fig.')),
@@ -910,11 +912,47 @@ class ImageService
             'band_padding' => max(4, min(80, (int) ($settings['band_padding'] ?? 10))),
             'color' => (string) ($settings['color'] ?? '#000000'),
             'bold' => ! empty($settings['bold']),
+            'band_border_color' => $borderColor !== '' ? $borderColor : null,
+            'band_border_width' => $borderWidth,
         ];
     }
 
     /**
-     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}  $config
+     * @return array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}
+     */
+    private function resolveCaptionConfigForCanvas(Request $data): array
+    {
+        $config = $this->resolveCaptionConfig($data);
+        $settings = $data->input('caption_settings');
+        if (! is_array($settings) || empty($settings['band_border_canvas'])) {
+            $config['band_border_color'] = null;
+            $config['band_border_width'] = 0;
+        }
+
+        return $config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}
+     */
+    private function resolveCaptionConfigForOverlay(Request $data, array $item): array
+    {
+        $config = $this->resolveCaptionConfig($data);
+        $settings = $data->input('caption_settings');
+        $allOverlays = is_array($settings) && ! empty($settings['band_border_all_overlays']);
+        $overlayBorder = ! empty($item['caption_band_border']);
+
+        if (! $allOverlays && ! $overlayBorder) {
+            $config['band_border_color'] = null;
+            $config['band_border_width'] = 0;
+        }
+
+        return $config;
+    }
+
+    /**
+     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}  $config
      */
     private function formatCaptionText(array $config, int $number, string $description): string
     {
@@ -932,7 +970,7 @@ class ImageService
     }
 
     /**
-     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}  $config
+     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}  $config
      */
     private function composeImageWithCaptionBand(
         ImageInterface $image,
@@ -970,7 +1008,35 @@ class ImageService
             }
         );
 
+        $this->drawCaptionBandBorder($canvas, 0, $imgH, $imgW, $bandH, $config);
+
         return $canvas;
+    }
+
+    /**
+     * @param  array{band_border_color: ?string, band_border_width: int}  $config
+     */
+    private function drawCaptionBandBorder(
+        ImageInterface $image,
+        int $x,
+        int $y,
+        int $width,
+        int $height,
+        array $config
+    ): void {
+        $borderWidth = (int) ($config['band_border_width'] ?? 0);
+        $borderColor = $config['band_border_color'] ?? null;
+
+        if ($borderWidth < 1 || ! is_string($borderColor) || $borderColor === '' || $width < 1 || $height < 1) {
+            return;
+        }
+
+        $borderWidth = max(1, min(12, $borderWidth));
+
+        $image->drawRectangle(function ($r) use ($x, $y, $width, $height, $borderColor, $borderWidth): void {
+            $r->size($width, $height)->at($x, $y);
+            $r->border($borderColor, $borderWidth);
+        });
     }
 
     private function wrapCaptionToWidth(string $text, float $fontSize, int $maxWidth): string
@@ -1087,7 +1153,7 @@ class ImageService
                         $tw,
                         $th,
                         $caption,
-                        $this->resolveCaptionConfig($data),
+                        $this->resolveCaptionConfigForOverlay($data, $item),
                         $captionAngle
                     );
                 } catch (\Throwable) {
@@ -1101,7 +1167,7 @@ class ImageService
      * Faixa branca com legenda por baixo de um overlay (coordenadas da imagem final).
      *
      * @param  array{number: int, description?: string}  $caption
-     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool}  $config
+     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}  $config
      */
     private function drawOverlayCaptionBand(
         ImageInterface $image,
@@ -1182,6 +1248,8 @@ class ImageService
                 $this->configureTextFont($font, $textPayload, $image);
             }
         );
+
+        $this->drawCaptionBandBorder($image, $bandX, $bandY, $bandW, $bandH, $config);
     }
 
     private function applyTextItem(ImageInterface $image, array $text): void

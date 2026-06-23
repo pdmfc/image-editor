@@ -680,8 +680,9 @@
         <!-- Legenda — faixa branca por baixo da composição -->
         <div
           v-if="photoCaptionApplied && !showingOriginal"
-          class="absolute z-[21] flex items-center justify-center overflow-hidden bg-white text-center shadow-sm ring-1 ring-black/10"
-          :style="photoCaptionBandStyle"
+          class="absolute z-[21] flex items-center justify-center overflow-hidden bg-white text-center shadow-sm"
+          :class="{ 'ring-1 ring-black/10': !canvasCaptionHasBorder }"
+          :style="[photoCaptionBandStyle, captionBorderStyleForCanvas]"
         >
           <span
             class="block w-full whitespace-pre-wrap break-words px-1"
@@ -696,7 +697,7 @@
           :key="ov.id"
           class="absolute select-none touch-none overflow-visible"
           :class="[
-            overlayChromeVisible(ov.id)
+            ov.id === activeOverlayChromeId
               ? collageOverlayGhostMove
                 ? 'ring-2 ring-sky-500/90'
                 : 'shadow-md ring-2 ring-sky-500/90'
@@ -705,8 +706,7 @@
               'pointer-events-none':
                 !canMoveImageOverlays ||
                 areaStampMode === 'copy' ||
-                overlaysPassthroughForTextTool,
-              'ring-sky-400': selectedOverlayId === ov.id && overlayChromeVisible(ov.id)
+                overlaysPassthroughForTextTool
             }
           ]"
           :style="overlayLayerStyle(ov)"
@@ -714,7 +714,7 @@
           <div
             class="relative h-full w-full cursor-move overflow-visible rounded-sm"
             :class="
-              collageOverlayGhostMove || !overlayChromeVisible(ov.id)
+              collageOverlayGhostMove || ov.id !== activeOverlayChromeId
                 ? 'bg-transparent'
                 : 'bg-black/20'
             "
@@ -733,7 +733,7 @@
           <div
             v-if="ov.caption"
             class="pointer-events-none absolute z-[1] flex items-center justify-center overflow-visible bg-white text-center"
-            :style="overlayCaptionBandStyle(ov)"
+            :style="[overlayCaptionBandStyle(ov), captionBorderStyleForOverlay(ov)]"
           >
             <span
               class="block w-full whitespace-pre-wrap break-words px-1"
@@ -741,14 +741,14 @@
             >{{ formatCaptionText(ov.caption.number, ov.caption.description) }}</span>
           </div>
           <div
-            v-show="overlayChromeVisible(ov.id)"
+            v-show="ov.id === activeOverlayChromeId"
             class="absolute -bottom-1 -right-1 z-10 h-3 w-3 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
             title="Redimensionar"
             @mousedown.stop.prevent="startOverlayResize($event, ov.id)"
             @touchstart.stop.prevent="startOverlayResize($event, ov.id)"
           ></div>
           <button
-            v-show="overlayChromeVisible(ov.id)"
+            v-show="ov.id === activeOverlayChromeId"
             type="button"
             title="Remover imagem"
             class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white shadow"
@@ -1646,8 +1646,48 @@
                 </button>
                 <label class="flex items-center gap-1 text-sm text-white">
                   Cor
-                  <input v-model="captionSettings.color" type="color" class="editor-color-input" />
+                  <input v-model="captionSettings.color" type="color" class="editor-color-input" @input="onCaptionSettingsChange" />
                 </label>
+              </div>
+              <div class="rounded-lg border border-white/15 bg-white/5 p-2">
+                <p class="mb-2 text-xs font-medium text-white/75">Bordo da legenda</p>
+                <div class="mb-2 space-y-1.5">
+                  <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
+                    <input
+                      v-model="captionSettings.bandBorderCanvasEnabled"
+                      type="checkbox"
+                      class="rounded"
+                      @change="onCaptionSettingsChange"
+                    />
+                    Legenda da folha
+                  </label>
+                  <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
+                    <input
+                      v-model="captionSettings.bandBorderAllOverlaysEnabled"
+                      type="checkbox"
+                      class="rounded"
+                      @change="onCaptionSettingsChange"
+                    />
+                    Todas as imagens com legenda
+                  </label>
+                </div>
+                <div class="space-y-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-white/70">Cor</span>
+                    <input v-model="captionSettings.bandBorderColor" type="color" class="editor-color-input" @input="onCaptionSettingsChange" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-white/70">Espessura: {{ captionSettings.bandBorderWidth }}px</label>
+                    <input
+                      v-model.number="captionSettings.bandBorderWidth"
+                      type="range"
+                      min="1"
+                      max="8"
+                      class="w-full accent-white"
+                      @input="onCaptionSettingsChange"
+                    />
+                  </div>
+                </div>
               </div>
               <div v-if="photoCaptionDraft" class="space-y-2">
                 <div>
@@ -1729,6 +1769,24 @@
                   </div>
                   <p class="text-center text-[11px] text-sky-200/90">
                     Exemplo: {{ overlayCaptionPreviewSample }}
+                  </p>
+                  <label
+                    v-if="selectedOverlayHasCaption || overlayCaptionDraftCanApply"
+                    class="flex cursor-pointer items-center gap-2 text-sm text-white"
+                  >
+                    <input
+                      v-model="overlayCaptionDraft.bandBorderEnabled"
+                      type="checkbox"
+                      class="rounded"
+                      @change="onOverlayCaptionBorderDraftChange"
+                    />
+                    Bordo nesta imagem
+                  </label>
+                  <p
+                    v-if="captionSettings.bandBorderAllOverlaysEnabled"
+                    class="text-[10px] text-white/45"
+                  >
+                    «Todas as imagens com legenda» está activo — o bordo aplica-se a todas.
                   </p>
                   <button
                     type="button"
@@ -2052,7 +2110,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['close', 'save', 'error', 'useInForm', 'gallery-navigate'])
+const emit = defineEmits(['close', 'save', 'error', 'useInForm', 'gallery-navigate', 'preview-updated'])
 
 const isBlankCanvas = computed(() => Boolean(props.photo?.is_blank_canvas))
 const showBlankCanvasHint = ref(false)
@@ -2410,13 +2468,29 @@ const canMoveImageOverlays = computed(
     !isEffectRegionToolActive.value
 )
 
-/** Moldura e alças: sempre visíveis no modo normal; após pixelização só ao seleccionar/arrastar. */
-const overlayChromeVisible = (overlayId) => {
-  if (!collageOverlayGhostMove.value) {
-    return true
+/** Moldura e alças: no máximo uma imagem activa (seleccionada, em arrasto ou a redimensionar). */
+const activeOverlayChromeId = computed(() => {
+  const overlays = overlaysForRender.value
+  if (!overlays.length) {
+    return null
   }
-  return selectedOverlayId.value === overlayId || movingOverlayId.value === overlayId
-}
+  if (resizingOverlayId.value) {
+    return resizingOverlayId.value
+  }
+  if (movingOverlayId.value) {
+    return movingOverlayId.value
+  }
+  if (
+    selectedOverlayId.value &&
+    overlays.some((overlay) => overlay.id === selectedOverlayId.value)
+  ) {
+    return selectedOverlayId.value
+  }
+  if (overlays.length === 1) {
+    return overlays[0].id ?? null
+  }
+  return null
+})
 
 const overlayMoveTitle = computed(() => {
   if (!canMoveImageOverlays.value) {
@@ -2831,8 +2905,28 @@ const createDefaultCaptionSettings = () => ({
   fontSize: 14,
   bandPadding: 10,
   color: '#000000',
-  bold: false
+  bold: false,
+  bandBorderCanvasEnabled: false,
+  bandBorderAllOverlaysEnabled: false,
+  bandBorderColor: '#000000',
+  bandBorderWidth: 2
 })
+
+const migrateCaptionSettings = (raw) => {
+  const settings = { ...createDefaultCaptionSettings(), ...cloneJson(raw) }
+  if (
+    settings.bandBorderEnabled &&
+    settings.bandBorderCanvasEnabled === false &&
+    settings.bandBorderAllOverlaysEnabled === false &&
+    raw.bandBorderCanvasEnabled === undefined &&
+    raw.bandBorderAllOverlaysEnabled === undefined
+  ) {
+    settings.bandBorderCanvasEnabled = true
+    settings.bandBorderAllOverlaysEnabled = true
+  }
+  delete settings.bandBorderEnabled
+  return settings
+}
 
 const captionSettings = ref(createDefaultCaptionSettings())
 const photoCaptionApplied = ref(null)
@@ -2885,6 +2979,10 @@ const movingOverlayId = ref(null)
 const overlayMoveGrabNat = ref({ x: 0, y: 0 })
 const resizingOverlayId = ref(null)
 const overlayResizeStart = ref(null)
+let nextOverlayImageId = 0
+
+const createOverlayImageId = () =>
+  `ov-${Date.now()}-${++nextOverlayImageId}-${Math.random().toString(36).slice(2, 8)}`
 
 const isDraggingBlurPan = ref(false)
 const blurPanGrab = ref({ x: 0, y: 0 })
@@ -3157,7 +3255,7 @@ const restoreEditSnapshot = async (snap) => {
   imageOverlays.value = cloneJson(snap.imageOverlays)
   selectedOverlayId.value = snap.selectedOverlayId ?? imageOverlays.value[0]?.id ?? null
   captionSettings.value = snap.captionSettings
-    ? { ...createDefaultCaptionSettings(), ...cloneJson(snap.captionSettings) }
+    ? migrateCaptionSettings(snap.captionSettings)
     : createDefaultCaptionSettings()
   showCustomCaptionPrefix.value = !captionStandardPrefixes.includes(captionSettings.value.prefix)
   if (snap.photoCaptionApplied) {
@@ -6269,9 +6367,20 @@ const collageHasGlobalAdjustments = computed(() => {
   )
 })
 
-/** Na folha em branco, compõe overlays no servidor quando há ajustes globais ou efeitos locais. */
+/** Na folha em branco, envia overlays ao /preview quando há imagens coladas (ou efeitos/ajustes). */
 const shouldComposeCollageOverlaysInPreview = computed(
-  () => collageHasLocalEffects.value || collageHasGlobalAdjustments.value
+  () =>
+    collageHasLocalEffects.value ||
+    collageHasGlobalAdjustments.value ||
+    (isBlankCanvas.value && imageOverlays.value.length > 0)
+)
+
+/** Folha com overlays visíveis em DOM — o /preview compõe só para a miniatura da galeria. */
+const blankCanvasUsesDomOverlays = computed(
+  () =>
+    isBlankCanvas.value &&
+    imageOverlays.value.length > 0 &&
+    !collageOverlayGhostMove.value
 )
 
 /** Oculta overlays DOM só durante edição activa de desfoque/pixelização. */
@@ -6281,7 +6390,9 @@ const shouldHideDomImageOverlays = computed(
 
 /** Pré-visualização composta: overlays invisíveis mas arrastáveis (filtros ou efeitos locais fechados). */
 const collageOverlayGhostMove = computed(
-  () => shouldComposeCollageOverlaysInPreview.value && !isEffectRegionToolActive.value
+  () =>
+    (collageHasLocalEffects.value || collageHasGlobalAdjustments.value) &&
+    !isEffectRegionToolActive.value
 )
 
 const resolveBlurRegionPayload = () => {
@@ -7469,6 +7580,47 @@ const captionFontSizeNatural = () =>
 const captionBandPaddingNatural = () =>
   Math.max(4, Math.min(80, Math.round(displayTextSizeToNatural(captionSettings.value.bandPadding))))
 
+const captionBandBorderWidthNatural = () =>
+  Math.max(
+    1,
+    Math.min(12, Math.round(displayTextSizeToNatural(captionSettings.value.bandBorderWidth)))
+  )
+
+const buildCaptionBorderStyle = (enabled) => {
+  void captionSettings.value
+  if (!enabled) {
+    return {}
+  }
+  const widthNat = captionBandBorderWidthNatural()
+  if (widthNat < 1) {
+    return {}
+  }
+  const widthDisp = Math.max(1, naturalUnitToDisplay(widthNat))
+  return {
+    boxSizing: 'border-box',
+    border: `${widthDisp}px solid ${captionSettings.value.bandBorderColor || '#000000'}`
+  }
+}
+
+const overlayCaptionHasBorder = (ov) => {
+  if (!ov?.caption) {
+    return false
+  }
+  if (captionSettings.value.bandBorderAllOverlaysEnabled) {
+    return true
+  }
+  return Boolean(ov.captionBandBorderEnabled)
+}
+
+const canvasCaptionHasBorder = computed(
+  () =>
+    Boolean(photoCaptionApplied.value) && Boolean(captionSettings.value.bandBorderCanvasEnabled)
+)
+
+const captionBorderStyleForCanvas = computed(() => buildCaptionBorderStyle(canvasCaptionHasBorder.value))
+
+const captionBorderStyleForOverlay = (ov) => buildCaptionBorderStyle(overlayCaptionHasBorder(ov))
+
 const estimateCaptionBandHeightNat = (number, description, widthNat) => {
   if (!widthNat || widthNat < 2) {
     return 0
@@ -7636,8 +7788,11 @@ const syncOverlayCaptionDraftFromSelection = () => {
     return
   }
   overlayCaptionDraft.value = ov.caption
-    ? clonePhotoCaption(ov.caption)
-    : { number: nextOverlayCaptionNumber(), description: '' }
+    ? {
+        ...clonePhotoCaption(ov.caption),
+        bandBorderEnabled: Boolean(ov.captionBandBorderEnabled)
+      }
+    : { number: nextOverlayCaptionNumber(), description: '', bandBorderEnabled: false }
 }
 
 const overlayCaptionPreviewSample = computed(() => {
@@ -7650,6 +7805,24 @@ const overlayCaptionDraftCanApply = computed(() => {
   const n = Number(overlayCaptionDraft.value?.number)
   return Number.isFinite(n) && n >= 1 && n <= 9999 && Boolean(selectedOverlayId.value)
 })
+
+const onOverlayCaptionBorderDraftChange = () => {
+  if (!selectedOverlayId.value || !overlayCaptionDraft.value || !selectedOverlayHasCaption.value) {
+    return
+  }
+  const idx = imageOverlays.value.findIndex((o) => o.id === selectedOverlayId.value)
+  if (idx < 0) {
+    return
+  }
+  const updated = [...imageOverlays.value]
+  updated[idx] = {
+    ...updated[idx],
+    captionBandBorderEnabled: Boolean(overlayCaptionDraft.value.bandBorderEnabled)
+  }
+  imageOverlays.value = updated
+  recordEditHistory()
+  scheduleApplyChanges()
+}
 
 const overlayCaptionBandStyle = (ov) => {
   void captionSettings.value
@@ -7692,6 +7865,7 @@ const confirmOverlayCaption = () => {
       number: Math.max(1, Math.round(overlayCaptionDraft.value.number)),
       description: overlayCaptionDraft.value.description || ''
     },
+    captionBandBorderEnabled: Boolean(overlayCaptionDraft.value.bandBorderEnabled),
     captionAngle: Number(updated[idx].captionAngle) || 0
   }
   imageOverlays.value = updated
@@ -7706,7 +7880,7 @@ const removeOverlayCaption = (overlayId) => {
     return
   }
   const updated = [...imageOverlays.value]
-  updated[idx] = { ...updated[idx], caption: null }
+  updated[idx] = { ...updated[idx], caption: null, captionBandBorderEnabled: false }
   imageOverlays.value = updated
   if (selectedOverlayId.value === overlayId) {
     syncOverlayCaptionDraftFromSelection()
@@ -7731,7 +7905,11 @@ const buildCaptionSettingsPayload = () => ({
   font_size: captionFontSizeNatural(),
   band_padding: captionBandPaddingNatural(),
   color: captionSettings.value.color,
-  bold: Boolean(captionSettings.value.bold)
+  bold: Boolean(captionSettings.value.bold),
+  band_border_canvas: Boolean(captionSettings.value.bandBorderCanvasEnabled),
+  band_border_all_overlays: Boolean(captionSettings.value.bandBorderAllOverlaysEnabled),
+  band_border_color: captionSettings.value.bandBorderColor || '#000000',
+  band_border_width: captionBandBorderWidthNatural()
 })
 
 const mapImageOverlaysPayload = () =>
@@ -7750,6 +7928,7 @@ const mapImageOverlaysPayload = () =>
         description: caption.description || ''
       }
       item.caption_angle = ((Number(ov.captionAngle) || 0) % 360 + 360) % 360
+      item.caption_band_border = overlayCaptionHasBorder(ov)
     }
     return item
   })
@@ -7903,7 +8082,7 @@ const addImageOverlayFromDataUrl = (src) => {
       ih - nh,
       Math.max(0, Math.round((ih - nh) / 2) + Math.floor(stack / 5) * 28)
     )
-    const overlayId = `ov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const overlayId = createOverlayImageId()
     imageOverlays.value.push({
       id: overlayId,
       src,
@@ -8213,6 +8392,7 @@ const startOverlayResize = (e, id) => {
   const p = clientToImgLocal(e)
   const n = displayPointToNatural(p.x, p.y)
   overlayResizeStart.value = { mx0: n.x, my0: n.y, w0: ov.width, h0: ov.height }
+  selectedOverlayId.value = id
   resizingOverlayId.value = id
   window.addEventListener('mousemove', onOverlayResizeMove)
   window.addEventListener('mouseup', stopOverlayResize)
@@ -8343,7 +8523,7 @@ const pasteAreaStampAt = (displayX, displayY) => {
   nx = Math.max(0, Math.min(el.naturalWidth - clip.width, nx))
   ny = Math.max(0, Math.min(el.naturalHeight - clip.height, ny))
   imageOverlays.value.push({
-    id: `ov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: createOverlayImageId(),
     src: clip.src,
     x: nx,
     y: ny,
@@ -9344,8 +9524,14 @@ const applyChanges = async (options = {}) => {
       const newUrl = response.data.image_data
       if (options.commitGeometryPreview) {
         await finalizeGeometryPreviewUrl(newUrl)
-      } else {
+      } else if (!blankCanvasUsesDomOverlays.value) {
         currentImageUrl.value = newUrl
+      }
+      if (isBlankCanvas.value && props.photo?.filename && typeof newUrl === 'string' && newUrl !== '') {
+        emit('preview-updated', {
+          filename: props.photo.filename,
+          url: newUrl
+        })
       }
       if (options.bakeDrawings) {
         drawings.value = []
@@ -9664,6 +9850,25 @@ watch(selectedOverlayId, () => {
     syncOverlayCaptionDraftFromSelection()
   }
 })
+
+watch(
+  () => imageOverlays.value.map((overlay) => overlay.id).join('\0'),
+  () => {
+    const list = imageOverlays.value
+    if (!list.length) {
+      selectedOverlayId.value = null
+      return
+    }
+    if (list.length === 1) {
+      selectedOverlayId.value = list[0].id
+      return
+    }
+    if (!list.some((overlay) => overlay.id === selectedOverlayId.value)) {
+      selectedOverlayId.value = list[list.length - 1].id
+    }
+  },
+  { immediate: true }
+)
 
 const tryPasteAreaStamp = (e) => {
   if (areaStampMode.value !== 'paste' || !areaClipboard.value) {
