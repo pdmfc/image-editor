@@ -36,10 +36,25 @@ return [
         'authorize' => null,
     ],
 
+    'authorization' => [
+        'enforce_user_ownership' => env('IMAGE_EDITOR_ENFORCE_USER_OWNERSHIP', true),
+        'authorize' => null,
+        'denied_message' => 'Não autorizado a aceder a esta galeria.',
+        'denied_status' => 403,
+    ],
+
     'gallery' => [
         'folders_enabled' => filter_var(
             env('IMAGE_EDITOR_GALLERY_FOLDERS', false),
             FILTER_VALIDATE_BOOL
         ),
+        'max_images' => max(0, (int) env(
+            'IMAGE_EDITOR_GALLERY_MAX_IMAGES',
+            env('IMAGE_EDITOR_GALLERY_TOTAL', 50)
+        )),
+        'max_upload_mb' => max(1, (int) env(
+            'IMAGE_EDITOR_GALLERY_MAX_UPLOAD_MB',
+            env('IMAGE_EDITOR_MAX_UPLOAD_MB', 10)
+        )),
     ],
 ];

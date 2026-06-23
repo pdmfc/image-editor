@@ -383,11 +383,11 @@
             </button>
           </div>
         </div>
-        </div>
         <!-- Pré-visualização local dos desenhos em curso (evita esperar pelo /preview) -->
         <svg
           v-if="showDrawingLiveOverlay"
-          class="pointer-events-none absolute inset-0 z-[31] h-full w-full overflow-visible"
+          class="ie-drawing-overlay pointer-events-none absolute inset-0 z-[31] h-full w-full overflow-visible"
+          :style="drawingOverlayClipStyle"
           xmlns="http://www.w3.org/2000/svg"
         >
           <g v-if="drawingRubberBand" :stroke="drawStrokeColor" :stroke-width="Math.max(1, drawStrokeWidth)" stroke-linecap="round" stroke-linejoin="round" fill="none" vector-effect="non-scaling-stroke">
@@ -431,11 +431,12 @@
               :fill-opacity="drawingPreviewFillOpacity"
               :stroke="drawStrokeColor"
             />
-            <circle
+            <ellipse
               v-else-if="drawingRubberBand.tool === 'circle'"
               :cx="drawingRubberBand.cx"
               :cy="drawingRubberBand.cy"
-              :r="drawingRubberBand.r"
+              :rx="drawingRubberBand.r"
+              :ry="drawingRubberBand.r"
               :fill="drawingPreviewFill"
               :fill-opacity="drawingPreviewFillOpacity"
               :stroke="drawStrokeColor"
@@ -481,7 +482,15 @@
             fill="none"
             vector-effect="non-scaling-stroke"
           >
-            <circle v-if="pathDraftPoints.length === 1" :cx="pathDraftPoints[0].x" :cy="pathDraftPoints[0].y" r="3" />
+            <ellipse
+              v-if="pathDraftPoints.length === 1"
+              :cx="pathDraftPoints[0].x"
+              :cy="pathDraftPoints[0].y"
+              rx="3"
+              ry="3"
+              :fill="drawStrokeColor"
+              stroke="none"
+            />
             <template v-else-if="pathDraftPoints.length === 2">
               <line
                 :x1="pathDraftPoints[0].x"
@@ -757,7 +766,8 @@
         <!-- Desenhos guardados por cima da imagem (camada vectorial até guardar) -->
         <svg
           v-if="showDrawingsOverlay"
-          class="pointer-events-none absolute inset-0 z-[27] h-full w-full overflow-visible"
+          class="ie-drawing-overlay pointer-events-none absolute inset-0 z-[27] h-full w-full overflow-visible"
+          :style="drawingOverlayClipStyle"
           xmlns="http://www.w3.org/2000/svg"
         >
           <template v-for="(shape, idx) in drawingOverlayShapes" :key="'draw-overlay-' + idx">
@@ -809,11 +819,12 @@
               :fill-opacity="shape.fillOpacity"
               vector-effect="non-scaling-stroke"
             />
-            <circle
+            <ellipse
               v-else-if="shape.kind === 'circle'"
               :cx="shape.cx"
               :cy="shape.cy"
-              :r="shape.r"
+              :rx="shape.r"
+              :ry="shape.r"
               :stroke="shape.stroke"
               :stroke-width="shape.strokeWidth"
               :fill="shape.fill"
@@ -849,17 +860,19 @@
               stroke-linecap="round"
               vector-effect="non-scaling-stroke"
             />
-            <circle
+            <ellipse
               v-else-if="shape.kind === 'pixel'"
               :cx="shape.cx"
               :cy="shape.cy"
-              r="2"
+              rx="2"
+              ry="2"
               :fill="shape.stroke"
+              stroke="none"
             />
           </template>
         </svg>
         <!-- Áreas para mover desenhos (fora do modo Desenho) -->
-        <div v-if="canMoveDrawings" class="pointer-events-none absolute inset-0 z-[28]">
+        <div v-if="canMoveDrawings" class="pointer-events-none absolute inset-0 z-[28]" :style="drawingOverlayClipStyle">
           <div
             v-for="box in drawingHitBoxes"
             :key="'draw-hit-' + box.index"
@@ -874,6 +887,7 @@
             @mousedown.stop.prevent="startDrawingMove($event, box.index)"
             @touchstart.stop.prevent="startDrawingMove($event, box.index)"
           />
+        </div>
         </div>
         </div>
         <!-- Camada de captura para borracha de desfoque/pixelização (por cima das imagens arrastadas) -->
@@ -896,8 +910,9 @@
         <!-- Camada de desenho por cima da composição (folha + imagens arrastadas) -->
         <div
           v-if="isDrawingCaptureActive"
-          class="absolute inset-0 z-[30] touch-none"
+          class="absolute z-[30] touch-none"
           :class="imageCursorClass"
+          :style="imageDrawableCaptureStyle"
           @mousedown="onDrawingSurfaceMouseDown"
           @click="onDrawingSurfaceClick"
           @touchstart="onDrawingSurfaceTouchStart"
@@ -958,13 +973,10 @@
         <button
           v-if="hasChanges"
           type="button"
-          title="Segurar para ver a imagem original"
-          class="mt-1 w-full min-w-[2.75rem] rounded-md border-t border-white/15 pt-1.5 text-[10px] font-medium text-white/90 hover:bg-white/20 select-none touch-none"
+          title="Ver imagem original (clique para alternar)"
+          class="mt-1 w-full min-w-[2.75rem] rounded-md border-t border-white/15 pt-1.5 text-[10px] font-medium text-white/90 hover:bg-white/20 select-none"
           :class="{ 'bg-white/25 ring-1 ring-white/40': showingOriginal }"
-          @pointerdown.prevent="showingOriginal = true"
-          @pointerup="showingOriginal = false"
-          @pointerleave="showingOriginal = false"
-          @pointercancel="showingOriginal = false"
+          @click="showingOriginal = !showingOriginal"
         >
           Original
         </button>
@@ -2000,7 +2012,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
-import axios from 'axios'
+import axios from '../http/client.js'
 const props = defineProps({
   imageUrl: {
     type: String,
@@ -2360,7 +2372,7 @@ const isCollageComposition = computed(
 
 
 const showDrawingsOverlay = computed(
-  () => drawings.value.length > 0
+  () => drawings.value.length > 0 && !showingOriginal.value
 )
 
 /** Camada por cima da composição enquanto uma ferramenta de desenho está selecionada. */
@@ -2426,6 +2438,7 @@ const overlayMoveTitle = computed(() => {
 /** Desenhos arrastáveis sobre a imagem (fora do modo Desenho). */
 const canMoveDrawings = computed(
   () =>
+    !showingOriginal.value &&
     drawings.value.length > 0 &&
     !drawingTool.value &&
     !showDrawingMenu.value
@@ -2792,17 +2805,23 @@ const textOffset = ref({ x: 0, y: 0 })
 /** Imagens extra: x,y,width,height em px da imagem natural; src = data URL. */
 const imageOverlays = ref([])
 
-const overlaysForRender = computed(() =>
-  geometryDisplayLock.value && geometryDisplayOverlaySnapshot.value
+const overlaysForRender = computed(() => {
+  if (showingOriginal.value) {
+    return []
+  }
+  return geometryDisplayLock.value && geometryDisplayOverlaySnapshot.value
     ? geometryDisplayOverlaySnapshot.value
     : imageOverlays.value
-)
+})
 
-const textsForRender = computed(() =>
-  geometryDisplayLock.value && geometryDisplayTextSnapshot.value
+const textsForRender = computed(() => {
+  if (showingOriginal.value) {
+    return []
+  }
+  return geometryDisplayLock.value && geometryDisplayTextSnapshot.value
     ? geometryDisplayTextSnapshot.value
     : texts.value
-)
+})
 
 const selectedOverlayId = ref(null)
 
@@ -3358,6 +3377,24 @@ const imageDrawableCaptureStyle = computed(() => {
     top: `${oy}px`,
     width: `${drawnW}px`,
     height: `${drawnH}px`
+  }
+})
+
+/** Recorta desenhos à área visível da foto (não desenhar no fundo preto). */
+const drawingOverlayClipStyle = computed(() => {
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  const layer = compositionLayerRef.value
+  const m = compositionDisplayMetrics.value
+  const rw = layer?.clientWidth || 0
+  const rh = layer?.clientHeight || 0
+  if (!m.imgW || !rw || !rh) {
+    return {}
+  }
+  const right = Math.max(0, rw - m.ox - m.imgW)
+  const bottom = Math.max(0, rh - m.oy - m.imgH)
+  return {
+    clipPath: `inset(${m.oy}px ${right}px ${bottom}px ${m.ox}px)`
   }
 })
 
@@ -5904,13 +5941,136 @@ const draftPointToStored = (pt) =>
 const draftRectToStored = (left, top, w, h) =>
   displayRectToNatural(left, top, w, h)
 
+const clampDisplayPointToImage = (px, py) => {
+  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
+  if (drawnW < 1 || drawnH < 1) {
+    return { x: px, y: py }
+  }
+  return {
+    x: Math.max(ox, Math.min(ox + drawnW, px)),
+    y: Math.max(oy, Math.min(oy + drawnH, py))
+  }
+}
+
+const getDrawingNaturalExtents = (d) => {
+  const pad = Math.ceil((d.strokeWidth || 2) / 2)
+  const t = d.type
+  if (t === 'line' || t === 'arrow') {
+    return {
+      minX: Math.min(d.x1, d.x2) - pad,
+      minY: Math.min(d.y1, d.y2) - pad,
+      maxX: Math.max(d.x1, d.x2) + pad,
+      maxY: Math.max(d.y1, d.y2) + pad
+    }
+  }
+  if (t === 'rectangle') {
+    return {
+      minX: d.x - pad,
+      minY: d.y - pad,
+      maxX: d.x + d.width + pad,
+      maxY: d.y + d.height + pad
+    }
+  }
+  if (t === 'ellipse') {
+    return {
+      minX: d.cx - d.width / 2 - pad,
+      minY: d.cy - d.height / 2 - pad,
+      maxX: d.cx + d.width / 2 + pad,
+      maxY: d.cy + d.height / 2 + pad
+    }
+  }
+  if (t === 'circle') {
+    const half = circleNaturalDiameter(d) / 2
+    return {
+      minX: d.cx - half - pad,
+      minY: d.cy - half - pad,
+      maxX: d.cx + half + pad,
+      maxY: d.cy + half + pad
+    }
+  }
+  if (
+    (t === 'pen' || t === 'polygon' || t === 'bezier') &&
+    Array.isArray(d.points) &&
+    d.points.length > 0
+  ) {
+    let minX = d.points[0].x
+    let minY = d.points[0].y
+    let maxX = minX
+    let maxY = minY
+    for (const p of d.points) {
+      minX = Math.min(minX, p.x)
+      minY = Math.min(minY, p.y)
+      maxX = Math.max(maxX, p.x)
+      maxY = Math.max(maxY, p.y)
+    }
+    return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
+  }
+  if (t === 'pixel' || t === 'fill') {
+    return {
+      minX: d.x - pad,
+      minY: d.y - pad,
+      maxX: d.x + pad,
+      maxY: d.y + pad
+    }
+  }
+  return { minX: 0, minY: 0, maxX: 1, maxY: 1 }
+}
+
+const clampDrawingTranslation = (snapshot, dx, dy) => {
+  const el = imageRef.value
+  if (!el?.naturalWidth || !el?.naturalHeight) {
+    return { dx, dy }
+  }
+  const nw = el.naturalWidth
+  const nh = el.naturalHeight
+  const ext = getDrawingNaturalExtents(snapshot)
+  const pad = Math.ceil((snapshot.strokeWidth || 2) / 2)
+  const w = ext.maxX - ext.minX
+  const h = ext.maxY - ext.minY
+  let ndx = dx
+  let ndy = dy
+
+  if (w <= nw - 2 * pad) {
+    if (ext.minX + ndx < pad) {
+      ndx = pad - ext.minX
+    }
+    if (ext.maxX + ndx > nw - pad) {
+      ndx = (nw - pad) - ext.maxX
+    }
+  } else {
+    ndx = pad - ext.minX
+  }
+
+  if (h <= nh - 2 * pad) {
+    if (ext.minY + ndy < pad) {
+      ndy = pad - ext.minY
+    }
+    if (ext.maxY + ndy > nh - pad) {
+      ndy = (nh - pad) - ext.maxY
+    }
+  } else {
+    ndy = pad - ext.minY
+  }
+
+  return { dx: ndx, dy: ndy }
+}
+
+const clampDrawingToImage = (d) => {
+  const clamped = clampDrawingTranslation(d, 0, 0)
+  if (clamped.dx === 0 && clamped.dy === 0) {
+    return d
+  }
+  return translateDrawingClone(d, clamped.dx, clamped.dy)
+}
+
 const drawingPointerForEvent = (e) => {
-  const draft = clientToImgLocal(e)
+  const raw = clientToImgLocal(e)
+  const draft = clampDisplayPointToImage(raw.x, raw.y)
   return { draft, stored: draftPointToStored(draft) }
 }
 
 const pushActiveDrawing = (shape) => {
-  drawings.value.push(shape)
+  drawings.value.push(clampDrawingToImage(shape))
 }
 
 const committedRegionToDisplayRect = (natural) => {
@@ -6464,6 +6624,18 @@ const expandNaturalBounds = (minX, minY, maxX, maxY, pad) => ({
   height: Math.max(1, maxY - minY + pad * 2)
 })
 
+const circleNaturalDiameter = (d) => {
+  if (Number.isFinite(d.diameter) && d.diameter > 0) {
+    return d.diameter
+  }
+  const w = Number(d.width)
+  const h = Number(d.height)
+  if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+    return Math.min(w, h)
+  }
+  return 2
+}
+
 const getDrawingNaturalBounds = (d) => {
   const pad = Math.max(6, (d.strokeWidth || 2) * 3)
   const t = d.type
@@ -6489,11 +6661,13 @@ const getDrawingNaturalBounds = (d) => {
     )
   }
   if (t === 'circle') {
+    const diameter = circleNaturalDiameter(d)
+    const half = diameter / 2
     return expandNaturalBounds(
-      d.cx - d.diameter / 2,
-      d.cy - d.diameter / 2,
-      d.cx + d.diameter / 2,
-      d.cy + d.diameter / 2,
+      d.cx - half,
+      d.cy - half,
+      d.cx + half,
+      d.cy + half,
       pad
     )
   }
@@ -6546,29 +6720,24 @@ const translateDrawingClone = (d, dx, dy) => {
   return c
 }
 
+const drawingDisplayRect = (d) => {
+  const b = getDrawingNaturalBounds(d)
+  return naturalRectToDisplay(b.x, b.y, b.width, b.height)
+}
+
 const drawingHitBoxes = computed(() => {
   void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
   if (!canMoveDrawings.value) {
     return []
   }
-  const el = imageRef.value
   const minPx = 28
   return drawings.value.map((d, index) => {
-    const b = getDrawingNaturalBounds(d)
-    const disp = naturalRectToDisplay(b.x, b.y, b.width, b.height)
-    let w = Math.max(minPx, disp.width)
-    let h = Math.max(minPx, disp.height)
-    let left = disp.left - (w - disp.width) / 2
-    let top = disp.top - (h - disp.height) / 2
-    if (el?.naturalWidth) {
-      const scale = displayStrokeScale.value
-      const ox = (el.clientWidth - el.naturalWidth * scale) / 2
-      const oy = (el.clientHeight - el.naturalHeight * scale) / 2
-      const maxW = el.naturalWidth * scale
-      const maxH = el.naturalHeight * scale
-      left = Math.max(ox, Math.min(ox + maxW - w, left))
-      top = Math.max(oy, Math.min(oy + maxH - h, top))
-    }
+    const disp = drawingDisplayRect(d)
+    const w = Math.max(minPx, disp.width)
+    const h = Math.max(minPx, disp.height)
+    const left = disp.left - (w - disp.width) / 2
+    const top = disp.top - (h - disp.height) / 2
     return {
       index,
       style: {
@@ -6624,8 +6793,9 @@ const onDrawingWindowMove = (e) => {
   }
   const p = clientToImgLocal(e)
   const n = displayPointToNatural(p.x, p.y)
-  const dx = n.x - drawingMoveStartNat.value.x
-  const dy = n.y - drawingMoveStartNat.value.y
+  let dx = n.x - drawingMoveStartNat.value.x
+  let dy = n.y - drawingMoveStartNat.value.y
+  ;({ dx, dy } = clampDrawingTranslation(drawingMoveSnapshot.value, dx, dy))
   const idx = movingDrawingIndex.value
   drawings.value[idx] = translateDrawingClone(drawingMoveSnapshot.value, dx, dy)
 }
@@ -6722,13 +6892,13 @@ const buildDrawingOverlayShapes = (list, mapPoint, strokeScale) => {
       continue
     }
     if (t === 'circle') {
-      const p0 = mapPoint(d.cx - d.diameter / 2, d.cy - d.diameter / 2)
-      const p1 = mapPoint(d.cx + d.diameter / 2, d.cy + d.diameter / 2)
+      const diameter = circleNaturalDiameter(d)
+      const center = mapPoint(d.cx, d.cy)
       shapes.push({
         kind: 'circle',
-        cx: (p0.x + p1.x) / 2,
-        cy: (p0.y + p1.y) / 2,
-        r: Math.max(1, Math.min(Math.abs(p1.x - p0.x), Math.abs(p1.y - p0.y)) / 2),
+        cx: center.x,
+        cy: center.y,
+        r: Math.max(1, (diameter * strokeScale) / 2),
         stroke,
         strokeWidth,
         ...fillProps
@@ -9754,5 +9924,11 @@ defineExpose({
 .editor-color-preset-active {
   border-color: #34d399;
   box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.85);
+}
+
+/* Evita CSS global do host (ex. Nova/Filament) a forçar fill/stroke em <circle>. */
+.ie-drawing-overlay circle {
+  fill: unset;
+  stroke: unset;
 }
 </style>

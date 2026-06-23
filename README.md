@@ -394,6 +394,10 @@ O pedido é `POST /api/camera/qrcode` com `{ user_id: ... }`. O pacote envia à 
 - `user_token` — ID sanitizado do utilizador
 - `endpoint` — URL absoluta de callback enviada à API QR (ver `QRCODE_CALLBACK_URL` abaixo)
 - `delivery_mode` — por omissão `callback_base64` (configurável por `QRCODE_DELIVERY_MODE`)
+- `max_files` — (opcional) número máximo de imagens que o telemóvel pode enviar com este QR; calculado automaticamente a partir dos slots livres da galeria (`IMAGE_EDITOR_GALLERY_TOTAL` menos imagens já existentes)
+- `max_upload_mb` — tamanho máximo por imagem (MB), alinhado com `IMAGE_EDITOR_GALLERY_MAX_UPLOAD_MB`
+
+**Segurança:** todas as rotas da galeria (incluindo `/api/camera/qrcode`) validam que o `user_id` do pedido corresponde ao utilizador autenticado ou ao ID guardado em sessão via `ImageEditorSession::primeBroadcastUser()`. Pedidos manipulados devolvem `403`. Ver secção [Segurança — `user_id`](#segurança--user_id-nas-rotas-da-galeria).
 
 A API QR devolve o código (SVG ou imagem em base64). As fotos enviadas pelo telemóvel chegam ao callback e são guardadas em **`storage/app/public/photos/tmp/{userId}/`**. Cada utilizador só vê as suas imagens na galeria.
 
@@ -517,6 +521,52 @@ Para embutir só o editor noutro contexto avançado, importe `Camera.vue` com `a
 
 ---
 
+## Segurança — `user_id` nas rotas da galeria
+
+Por omissão (`IMAGE_EDITOR_ENFORCE_USER_OWNERSHIP=true`), o pacote recusa pedidos em que o `user_id` enviado no body/query não corresponde ao utilizador autorizado. Isto aplica-se a **todas** as rotas interativas (`/api/camera/*`, `/api/image/*`), incluindo o pedido de QR code.
+
+Ordem de validação:
+
+1. Callback `image-editor.authorization.authorize` (se definido)
+2. Senão, callback `image-editor.broadcasting.authorize` (se definido)
+3. Senão, compara com o ID em sessão (`ImageEditorSession::primeBroadcastUser($userId)`)
+4. Senão, compara com `$request->user()->getAuthIdentifier()` (requer middleware `auth` no host)
+
+### Integração com autenticação Laravel
+
+No host com login, adicione `auth` ao middleware das rotas do editor:
+
+```php
+// config/image-editor.php
+'routes' => [
+    'browser_middleware' => ['web', 'auth'],
+],
+```
+
+Ao abrir o editor, continue a fazer `ImageEditorSession::primeBroadcastUser($userId)` com o dono da galeria **apenas** se esse ID for o do utilizador logado (ou se a sua política de autorização o permitir).
+
+### Política personalizada
+
+Para regras mais complexas (ex.: colaborador com permissão sobre o registo de outro utilizador):
+
+```php
+// config/image-editor.php
+'authorization' => [
+    'enforce_user_ownership' => true,
+    'authorize' => function ($user, string $requestedUserId): bool {
+        return $user !== null && $user->can('edit-gallery', $requestedUserId);
+    },
+],
+```
+
+Para desativar temporariamente (apenas em desenvolvimento):
+
+```env
+IMAGE_EDITOR_ENFORCE_USER_OWNERSHIP=false
+```
+
+---
+
 ## Rotas principais
 
 ### API (registadas pelo pacote)
@@ -533,7 +583,7 @@ Para embutir só o editor noutro contexto avançado, importe `Camera.vue` com `a
 
 Todas as rotas API usam o prefixo `/api`. Por omissão:
 
-- rotas interativas do editor (`/api/camera/photos`, upload, edição, etc.) usam middleware `web`
+- rotas interativas do editor (`/api/camera/photos`, upload, edição, etc.) usam middleware `web` + validação de `user_id`
 - o callback QR usa middleware `api` e o path definido em `QRCODE_CALLBACK_URL` / `IMAGE_EDITOR_CALLBACK_PATH`
 
 Isto evita herdar `throttle:api` agressivo nas leituras normais da galeria. Pode ajustar via `.env` (`IMAGE_EDITOR_CALLBACK_MIDDLEWARE`, `IMAGE_EDITOR_ROUTES_PREFIX`, `IMAGE_EDITOR_CALLBACK_PATH`) ou em `config/image-editor.php` (`routes.browser_middleware`, `routes.callback_middleware`, `routes.prefix`, `routes.callback_path`).
@@ -559,6 +609,12 @@ ACTION_BUTTONS=upload,qrcode,camera,canvas
 
 # Pastas virtuais na galeria (false = lista plana, comportamento por defeito)
 IMAGE_EDITOR_GALLERY_FOLDERS=false
+
+# Limite de imagens na galeria (0 = sem limite)
+IMAGE_EDITOR_GALLERY_TOTAL=50
+
+# Tamanho máximo por imagem no upload (MB)
+IMAGE_EDITOR_GALLERY_MAX_UPLOAD_MB=10
 ```
 
 Valores aceites (separados por vírgula):

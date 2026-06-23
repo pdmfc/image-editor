@@ -9,6 +9,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use PDMFC\ImageEditor\Services\CameraService;
 use PDMFC\ImageEditor\Services\QrCodeService;
 use PDMFC\ImageEditor\Services\UserPhotoStorage;
+use PDMFC\ImageEditor\Support\GalleryUploadLimits;
 
 class CameraController extends Controller
 {
@@ -87,8 +88,10 @@ class CameraController extends Controller
     {
         $request->validate([
             'user_id' => 'required',
-            'photo' => 'required|image|max:25600',
+            'photo' => ['required', 'image', 'max:'.GalleryUploadLimits::maxKilobytes()],
             'folder_id' => 'nullable|string|max:64',
+        ], [
+            'photo.max' => GalleryUploadLimits::errorMessage(),
         ]);
 
         $result = $this->cameraService->uploadPhoto(

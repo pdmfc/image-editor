@@ -4,11 +4,13 @@ namespace PDMFC\ImageEditor\Services;
 
 use Illuminate\Support\Facades\Http;
 use PDMFC\ImageEditor\Support\CallbackRoute;
+use PDMFC\ImageEditor\Support\GalleryUploadLimits;
 
 class QrCodeService
 {
     public function __construct(
         protected UserPhotoStorage $storage,
+        protected CameraService $cameraService,
     ) {
     }
 
@@ -39,11 +41,30 @@ class QrCodeService
             ];
         }
 
-        $response = Http::withToken($bearer)->post($apiUrl, [
+        $remainingSlots = $this->cameraService->galleryRemainingSlots($userId);
+
+        if ($remainingSlots !== null && $remainingSlots <= 0) {
+            $max = $this->cameraService->galleryMaxImages();
+
+            return [
+                'error' => "Limite da galeria atingido ({$max} imagens). Elimine imagens para adicionar novas.",
+                'status' => 422,
+            ];
+        }
+
+        $payload = [
             'user_token' => $this->storage->sanitizeUserId($userId),
             'endpoint' => $this->storage->callbackUrl($userId),
             'delivery_mode' => $deliveryMode,
-        ]);
+        ];
+
+        if ($remainingSlots !== null && $remainingSlots > 0) {
+            $payload['max_files'] = $remainingSlots;
+        }
+
+        $payload['max_upload_mb'] = GalleryUploadLimits::maxMegabytes();
+
+        $response = Http::withToken($bearer)->post($apiUrl, $payload);
 
         if (! $response->successful()) {
             return [

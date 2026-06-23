@@ -3,8 +3,14 @@
 use Illuminate\Support\Facades\Route;
 use PDMFC\ImageEditor\Http\Controllers\CameraController;
 use PDMFC\ImageEditor\Http\Controllers\ImageController;
+use PDMFC\ImageEditor\Http\Middleware\EnsureGalleryUserAccess;
 
-Route::middleware(config('image-editor.routes.browser_middleware', ['web']))->group(function () {
+$browserMiddleware = array_values(array_unique(array_merge(
+    (array) config('image-editor.routes.browser_middleware', ['web']),
+    [EnsureGalleryUserAccess::class],
+)));
+
+Route::middleware($browserMiddleware)->group(function () {
     Route::post('/camera/qrcode', [CameraController::class, 'getQrCode'])->name('image-editor.qrcode');
     Route::get('/camera/photos/{userId}/{filename}', [CameraController::class, 'showPhoto'])
         ->where('filename', '.*')

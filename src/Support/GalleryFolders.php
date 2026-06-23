@@ -171,6 +171,28 @@ class GalleryFolders
     }
 
     /**
+     * @return list<string>
+     */
+    public function listPhotoFilenamesInFolder(string|int $userId, string $folderId): array
+    {
+        if (! $this->enabled()) {
+            return [];
+        }
+
+        $this->ensureInitialized($userId);
+        $data = $this->read($userId);
+        $filenames = [];
+
+        foreach ($data['assignments'] as $filename => $assignedId) {
+            if ($assignedId === $folderId) {
+                $filenames[] = (string) $filename;
+            }
+        }
+
+        return array_values($filenames);
+    }
+
+    /**
      * @param  list<string>  $knownFilenames
      */
     public function syncAssignmentsForKnownPhotos(string|int $userId, array $knownFilenames): void

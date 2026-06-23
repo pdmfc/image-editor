@@ -17,7 +17,19 @@
             <!-- Conteúdo -->
             <div class="space-y-2 text-center text-sm text-gray-600">
                 <p>Digitalize o QR Code com a câmara do telemóvel.</p>
-                <p>Pode fechar este popup — as fotos aparecem na galeria em tempo real (Reverb).</p>
+                <p
+                    v-if="maxFiles != null && maxFiles > 0"
+                    class="font-medium text-amber-700"
+                >
+                    O telemóvel só pode enviar {{ maxFiles }} imagem{{ maxFiles === 1 ? '' : 'ns' }} com este QR code.
+                </p>
+                <p
+                    v-if="maxUploadMb != null && maxUploadMb > 0"
+                    class="font-medium text-amber-700"
+                >
+                    Cada imagem pode ter no máximo {{ maxUploadMb }} MB.
+                </p>
+                <p>Pode fechar este popup — as fotos aparecem na galeria em tempo real.</p>
             </div>
             <div class="flex justify-center items-center p-4 bg-white rounded-lg">
                 <img
@@ -43,6 +55,14 @@ const props = defineProps({
     qrCode: {
         type: String,
         required: true
+    },
+    maxFiles: {
+        type: Number,
+        default: null
+    },
+    maxUploadMb: {
+        type: Number,
+        default: null
     }
 })
 

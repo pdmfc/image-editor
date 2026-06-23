@@ -95,6 +95,8 @@ class ImageEditorServiceProvider extends ServiceProvider
             'imageEditor' => fn (): array => [
                 'actionButtons' => config('image-editor.action_buttons', []),
                 'galleryFoldersEnabled' => (bool) config('image-editor.gallery.folders_enabled', false),
+                'galleryMaxImages' => (int) config('image-editor.gallery.max_images', 0),
+                'galleryMaxUploadMb' => (int) config('image-editor.gallery.max_upload_mb', 10),
             ],
         ]);
     }

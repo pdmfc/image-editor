@@ -101,7 +101,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import axios from 'axios'
+import axios from '../http/client.js'
 import Notification from './Notification.vue'
 
 const props = defineProps({

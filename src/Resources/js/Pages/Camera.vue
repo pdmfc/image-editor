@@ -13,7 +13,7 @@
             :for="fileInputId"
             :title="uploadTitle"
             class="toolbar-icon-btn cursor-pointer"
-            :class="{ 'pointer-events-none opacity-50': uploading }"
+            :class="{ 'pointer-events-none opacity-50': uploading || isGalleryAtLimit }"
           >
             <svg class="toolbar-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -25,7 +25,7 @@
             accept="image/jpeg,image/png,image/gif,image/webp"
             multiple
             class="hidden"
-            :disabled="uploading"
+            :disabled="uploading || isGalleryAtLimit"
             @change="handleFileUpload"
           />
           <button
@@ -33,6 +33,8 @@
             type="button"
             title="QR Code"
             class="toolbar-icon-btn"
+            :class="{ 'pointer-events-none opacity-50': isGalleryAtLimit }"
+            :disabled="isGalleryAtLimit"
             @click="getQRCode"
           >
             <svg class="toolbar-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -50,6 +52,8 @@
             type="button"
             title="Tirar foto"
             class="toolbar-icon-btn"
+            :class="{ 'pointer-events-none opacity-50': isGalleryAtLimit }"
+            :disabled="isGalleryAtLimit"
             @click="showCamera = true"
           >
             <svg class="toolbar-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,7 +71,7 @@
             type="button"
             :title="blankCanvasTitle"
             class="toolbar-icon-btn disabled:opacity-50"
-            :disabled="creatingBlank"
+            :disabled="creatingBlank || isGalleryAtLimit"
             @click="createBlankCanvas"
           >
             <svg class="toolbar-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,7 +213,7 @@
               <div class="flex items-center justify-between gap-2">
                 <p class="text-xs font-medium text-gray-500">
                   Imagens
-                  <span v-if="!loading && photos.length">({{ photos.length }})</span>
+                  <span v-if="!loading && galleryCountLabel">({{ galleryCountLabel }})</span>
                 </p>
                 <div v-if="!loading && photos.length > 0" class="flex items-center gap-0.5">
                   <button
@@ -373,7 +377,7 @@
           <div class="flex items-center justify-between gap-2">
             <p class="text-xs font-medium text-gray-500">
               Imagens
-              <span v-if="!loading && displayPhotos.length">({{ displayPhotos.length }})</span>
+              <span v-if="!loading && galleryCountLabel">({{ galleryCountLabel }})</span>
             </p>
             <div v-if="!loading && displayPhotos.length > 0" class="flex items-center gap-0.5">
               <button
@@ -690,6 +694,8 @@
       v-if="showQRCode"
       :show="showQRCode"
       :qr-code="qrCodeData"
+      :max-files="qrMaxFiles"
+      :max-upload-mb="galleryMaxUploadMb"
       @close="closeQrCode"
     />
 
@@ -741,7 +747,7 @@
 
 <script setup>
 import { ref, computed, onMounted, toRef, nextTick } from 'vue'
-import axios from 'axios'
+import axios from '../http/client.js'
 import Notification from '../Components/Notification.vue'
 import EditorTooltipLayer from '../Components/EditorTooltipLayer.vue'
 import ImageEditor from '../Components/ImageEditor.vue'
@@ -754,6 +760,8 @@ import GalleryFolderTree from '../Components/GalleryFolderTree.vue'
 import { useImageEditorRealtime } from '../composables/useImageEditorRealtime.js'
 import { useImageEditorActionButtons } from '../composables/useImageEditorActionButtons.js'
 import { useImageEditorGalleryFolders } from '../composables/useImageEditorGalleryFolders.js'
+import { useImageEditorGalleryMaxImages } from '../composables/useImageEditorGalleryMaxImages.js'
+import { useImageEditorGalleryMaxUploadMb } from '../composables/useImageEditorGalleryMaxUploadMb.js'
 import {
   GALLERY_FOLDER_COLORS,
   defaultFolderColor,
@@ -780,6 +788,14 @@ const props = defineProps({
   galleryFoldersEnabled: {
     type: Boolean,
     default: null
+  },
+  galleryMaxImages: {
+    type: Number,
+    default: null
+  },
+  galleryMaxUploadMb: {
+    type: Number,
+    default: null
   }
 })
 
@@ -789,6 +805,18 @@ const enabledActionButtons = useImageEditorActionButtons(
 
 const galleryFoldersEnabled = useImageEditorGalleryFolders(
   toRef(props, 'galleryFoldersEnabled')
+)
+
+const galleryMaxImages = useImageEditorGalleryMaxImages(
+  toRef(props, 'galleryMaxImages')
+)
+
+const galleryMaxUploadMb = useImageEditorGalleryMaxUploadMb(
+  toRef(props, 'galleryMaxUploadMb')
+)
+
+const galleryMaxUploadBytes = computed(
+  () => galleryMaxUploadMb.value * 1024 * 1024
 )
 
 const isActionEnabled = (action) => enabledActionButtons.value.has(action)
@@ -901,6 +929,42 @@ const fileInputId = computed(() => (props.asModal ? 'camera-file-modal' : 'camer
 
 const showCamera = ref(false)
 const photos = ref([])
+
+const galleryImageCount = computed(() => photos.value.length)
+
+const galleryCountLabel = computed(() => {
+  const count = galleryImageCount.value
+  const max = galleryMaxImages.value
+  if (max > 0) {
+    return `${count}/${max}`
+  }
+  return count > 0 ? String(count) : ''
+})
+
+const galleryRemainingSlots = computed(() => {
+  const max = galleryMaxImages.value
+  if (max <= 0) {
+    return Number.POSITIVE_INFINITY
+  }
+  return Math.max(0, max - galleryImageCount.value)
+})
+
+const qrMaxFiles = computed(() => {
+  const remaining = galleryRemainingSlots.value
+  return Number.isFinite(remaining) && remaining > 0 ? remaining : null
+})
+
+const isGalleryAtLimit = computed(
+  () => galleryMaxImages.value > 0 && galleryImageCount.value >= galleryMaxImages.value
+)
+
+const galleryLimitMessage = computed(() => {
+  const max = galleryMaxImages.value
+  return max > 0
+    ? `Limite da galeria atingido (${max} imagens). Elimine imagens para adicionar novas.`
+    : ''
+})
+
 const folders = ref([])
 const folderActionLoading = ref(false)
 const folderEditor = ref({
@@ -936,11 +1000,14 @@ const duplicatingFilename = ref(null)
 const uploading = ref(false)
 const uploadProgress = ref({ current: 0, total: 0 })
 const uploadTitle = computed(() => {
+  if (isGalleryAtLimit.value) {
+    return galleryLimitMessage.value
+  }
   if (!uploading.value) {
     if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
-      return `Carregar imagens para ${folderNameById(newPhotoFolderId.value)}`
+      return `Carregar imagens para ${folderNameById(newPhotoFolderId.value)} (${galleryMaxUploadMb.value} MB máx.)`
     }
-    return 'Carregar imagens (pode escolher várias)'
+    return `Carregar imagens (máx. ${galleryMaxUploadMb.value} MB cada)`
   }
   if (uploadProgress.value.total > 1) {
     return `A carregar ${uploadProgress.value.current}/${uploadProgress.value.total}…`
@@ -949,6 +1016,9 @@ const uploadTitle = computed(() => {
 })
 const newPhotoFolderId = ref('entrada')
 const blankCanvasTitle = computed(() => {
+  if (isGalleryAtLimit.value) {
+    return galleryLimitMessage.value
+  }
   if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
     return `Nova folha em branco em ${folderNameById(newPhotoFolderId.value)}`
   }
@@ -1179,7 +1249,10 @@ const onEditorDrop = async (event) => {
 }
 
 const createBlankCanvas = async () => {
-  if (creatingBlank.value || !requireUserId()) {
+  if (creatingBlank.value || !requireUserId() || isGalleryAtLimit.value) {
+    if (isGalleryAtLimit.value) {
+      showNotification('error', 'Limite atingido', galleryLimitMessage.value)
+    }
     return
   }
   creatingBlank.value = true
@@ -1881,10 +1954,16 @@ const confirmDeleteGalleryFolder = (folder) => {
     return
   }
 
+  const count = photosInFolder(folder.id).length
+  const imagesLabel =
+    count === 1 ? '1 imagem será eliminada' : `${count} imagens serão eliminadas`
+
   showNotification(
     'warning',
     'Eliminar pasta',
-    `As imagens de «${folder.name}» passam para Entrada. Continuar?`,
+    count > 0
+      ? `A pasta «${folder.name}» e as imagens dentro dela serão eliminadas permanentemente (${imagesLabel}). Continuar?`
+      : `A pasta «${folder.name}» será eliminada. Continuar?`,
     true,
     folder,
     0,
@@ -1912,8 +1991,35 @@ const deleteGalleryFolder = async (folder) => {
       next.delete(folder.id)
       expandedFolderBranches.value = next
     }
+    if (
+      selectedPhoto.value &&
+      photoFolderId(selectedPhoto.value) === folder.id
+    ) {
+      selectedPhoto.value = null
+    }
     await loadPhotos({ silent: true, autoSelectFirst: false })
-    showNotification('success', 'Pasta eliminada', `A pasta «${folder.name}» foi eliminada.`)
+    const deletedCount = Number(response.data?.deleted_photos_count ?? 0)
+    if (response.data?.partial) {
+      showNotification(
+        'warning',
+        'Eliminação parcial',
+        `A pasta «${folder.name}» foi eliminada, mas algumas imagens falharam.`
+      )
+      return
+    }
+    const photosLabel =
+      deletedCount === 1
+        ? '1 imagem eliminada'
+        : deletedCount > 0
+          ? `${deletedCount} imagens eliminadas`
+          : null
+    showNotification(
+      'success',
+      'Pasta eliminada',
+      photosLabel
+        ? `A pasta «${folder.name}» e ${photosLabel}.`
+        : `A pasta «${folder.name}» foi eliminada.`
+    )
   } catch (error) {
     console.error(error)
     showNotification(
@@ -2230,16 +2336,55 @@ const handleFileUpload = async (event) => {
   if (files.length === 0 || !requireUserId()) {
     return
   }
+
+  const maxBytes = galleryMaxUploadBytes.value
+  const acceptedBySize = []
+  const rejectedBySize = []
+  for (const file of files) {
+    if (file.size > maxBytes) {
+      rejectedBySize.push(file)
+    } else {
+      acceptedBySize.push(file)
+    }
+  }
+  if (rejectedBySize.length > 0) {
+    const mb = galleryMaxUploadMb.value
+    const label =
+      rejectedBySize.length === 1
+        ? `"${rejectedBySize[0].name}" excede ${mb} MB.`
+        : `${rejectedBySize.length} ficheiro(s) excedem ${mb} MB.`
+    showNotification('warning', 'Ficheiro demasiado grande', label)
+  }
+  if (acceptedBySize.length === 0) {
+    return
+  }
+
+  if (isGalleryAtLimit.value) {
+    showNotification('error', 'Limite atingido', galleryLimitMessage.value)
+    return
+  }
+  const remaining = galleryRemainingSlots.value
+  const filesToUpload =
+    Number.isFinite(remaining) && remaining < acceptedBySize.length
+      ? acceptedBySize.slice(0, remaining)
+      : acceptedBySize
+  if (filesToUpload.length < acceptedBySize.length) {
+    showNotification(
+      'warning',
+      'Limite da galeria',
+      `Só é possível carregar mais ${remaining} imagem(ns).`
+    )
+  }
   uploading.value = true
-  uploadProgress.value = { current: 0, total: files.length }
+  uploadProgress.value = { current: 0, total: filesToUpload.length }
   let lastFilename = null
   let uploaded = 0
   let failed = 0
   try {
-    for (let i = 0; i < files.length; i++) {
-      uploadProgress.value = { current: i + 1, total: files.length }
+    for (let i = 0; i < filesToUpload.length; i++) {
+      uploadProgress.value = { current: i + 1, total: filesToUpload.length }
       const formData = new FormData()
-      formData.append('photo', files[i])
+      formData.append('photo', filesToUpload[i])
       formData.append('user_id', String(props.userId))
       if (galleryFoldersEnabled.value && newPhotoFolderId.value) {
         formData.append('folder_id', newPhotoFolderId.value)
@@ -2440,6 +2585,10 @@ const confirmBulkDelete = async (filenames) => {
 }
 
 const getQRCode = async () => {
+  if (isGalleryAtLimit.value) {
+    showNotification('error', 'Limite atingido', galleryLimitMessage.value)
+    return
+  }
   if (props.userId == null || props.userId === '') {
     showNotification('error', 'Erro', 'ID do utilizador em falta.')
     return
@@ -2457,6 +2606,10 @@ const getQRCode = async () => {
 
 const handleDuplicate = async (photo) => {
   if (duplicatingFilename.value || !requireUserId()) {
+    return
+  }
+  if (isGalleryAtLimit.value) {
+    showNotification('error', 'Limite atingido', galleryLimitMessage.value)
     return
   }
   duplicatingFilename.value = photo.filename

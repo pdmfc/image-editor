@@ -5,6 +5,7 @@ namespace PDMFC\ImageEditor\Services;
 use Illuminate\Support\Facades\Storage;
 use PDMFC\ImageEditor\Events\PhotosUploadedFromMobile;
 use PDMFC\ImageEditor\Support\GalleryFolders;
+use PDMFC\ImageEditor\Support\GalleryUploadLimits;
 use Intervention\Image\Encoders\JpegEncoder;
 use Intervention\Image\Laravel\Facades\Image;
 
@@ -19,6 +20,57 @@ class CameraService
     private function disk(): string
     {
         return $this->storage->disk();
+    }
+
+    public function galleryMaxImages(): ?int
+    {
+        $max = (int) config('image-editor.gallery.max_images', 0);
+
+        return $max > 0 ? $max : null;
+    }
+
+    public function galleryRemainingSlots(string|int $userId): ?int
+    {
+        $max = $this->galleryMaxImages();
+
+        if ($max === null) {
+            return null;
+        }
+
+        return max(0, $max - $this->galleryPhotoCount($userId));
+    }
+
+    public function galleryPhotoCount(string|int $userId): int
+    {
+        $result = $this->listPhotosUnsorted($userId);
+
+        if (isset($result['error'])) {
+            return 0;
+        }
+
+        return count($result['photos'] ?? []);
+    }
+
+    private function galleryLimitError(int $max): array
+    {
+        return [
+            'error' => "Limite da galeria atingido ({$max} imagens). Elimine imagens para adicionar novas.",
+        ];
+    }
+
+    private function ensureGalleryHasRoom(string|int $userId, int $adding = 1): ?array
+    {
+        $max = $this->galleryMaxImages();
+
+        if ($max === null) {
+            return null;
+        }
+
+        if ($this->galleryPhotoCount($userId) + $adding > $max) {
+            return $this->galleryLimitError($max);
+        }
+
+        return null;
     }
 
     public function getPhotos(string|int $userId): array
@@ -47,6 +99,13 @@ class CameraService
                 $photos = $this->sortPhotosByGalleryOrder($photos, $userId);
                 $payload = ['photos' => $photos];
             }
+
+            $max = $this->galleryMaxImages();
+            if ($max !== null) {
+                $payload['gallery_max_images'] = $max;
+            }
+
+            $payload['gallery_max_upload_mb'] = GalleryUploadLimits::maxMegabytes();
 
             return $payload;
         } catch (\Exception $e) {
@@ -131,6 +190,14 @@ class CameraService
                     continue;
                 }
 
+                if ($limitError = $this->ensureGalleryHasRoom($userId)) {
+                    if ($saved === 0) {
+                        return $limitError;
+                    }
+
+                    break;
+                }
+
                 $name = $this->storage->ensureImageExtension((string) $file['name']);
                 $binary = base64_decode(
                     (string) preg_replace('#^data:image/\w+;base64,#i', '', (string) $file['content']),
@@ -139,6 +206,14 @@ class CameraService
 
                 if ($binary === false || $binary === '') {
                     continue;
+                }
+
+                if (GalleryUploadLimits::exceedsLimit(strlen($binary))) {
+                    if ($saved === 0) {
+                        return ['error' => GalleryUploadLimits::errorMessage()];
+                    }
+
+                    break;
                 }
 
                 if (Storage::disk($this->disk())->put($this->storage->filePath($userId, $name), $binary)) {
@@ -161,6 +236,10 @@ class CameraService
     public function capturePhoto($data, string|int $userId): array
     {
         try {
+            if ($limitError = $this->ensureGalleryHasRoom($userId)) {
+                return $limitError;
+            }
+
             $photoData = base64_decode(
                 (string) preg_replace('#^data:image/\w+;base64,#i', '', (string) $data->photo),
                 true
@@ -168,6 +247,10 @@ class CameraService
 
             if (! $photoData) {
                 return ['error' => 'Falha ao decodificar a foto'];
+            }
+
+            if (GalleryUploadLimits::exceedsLimit(strlen($photoData))) {
+                return ['error' => GalleryUploadLimits::errorMessage()];
             }
 
             $this->storage->ensureDirectory($userId);
@@ -193,8 +276,16 @@ class CameraService
     public function uploadPhoto($file, string|int $userId, ?string $folderId = null): array
     {
         try {
+            if ($limitError = $this->ensureGalleryHasRoom($userId)) {
+                return $limitError;
+            }
+
             if (! $file || ! $file->isValid()) {
                 return ['error' => 'Ficheiro inválido'];
+            }
+
+            if (GalleryUploadLimits::exceedsLimit((int) $file->getSize())) {
+                return ['error' => GalleryUploadLimits::errorMessage()];
             }
 
             $extension = strtolower($file->getClientOriginalExtension() ?: '');
@@ -251,6 +342,10 @@ class CameraService
         ?string $folderId = null
     ): array {
         try {
+            if ($limitError = $this->ensureGalleryHasRoom($userId)) {
+                return $limitError;
+            }
+
             $width = max(400, min(8000, $width));
             $height = max(300, min(8000, $height));
 
@@ -295,6 +390,10 @@ class CameraService
     public function duplicatePhoto(string $filename, string|int $userId): array
     {
         try {
+            if ($limitError = $this->ensureGalleryHasRoom($userId)) {
+                return $limitError;
+            }
+
             $safeName = $this->storage->safeFilename($filename);
             $filepath = $this->storage->filePath($userId, $safeName);
 
@@ -572,12 +671,37 @@ class CameraService
     public function deleteGalleryFolder(string|int $userId, string $folderId): array
     {
         try {
+            $filenames = $this->galleryFolders->listPhotoFilenamesInFolder($userId, $folderId);
+            $deletedPhotosCount = 0;
+            $photoErrors = [];
+
+            if ($filenames !== []) {
+                $deleteResult = $this->deletePhotos($filenames, $userId);
+                $deletedPhotosCount = (int) ($deleteResult['deleted_count'] ?? 0);
+                $photoErrors = $deleteResult['errors'] ?? [];
+
+                if ($deletedPhotosCount === 0 && $photoErrors !== []) {
+                    return [
+                        'error' => 'Não foi possível eliminar as imagens da pasta.',
+                        'errors' => $photoErrors,
+                    ];
+                }
+            }
+
             $this->galleryFolders->deleteFolder($userId, $folderId);
 
-            return [
+            $payload = [
                 'success' => true,
                 'folders' => $this->galleryFolders->listFolders($userId),
+                'deleted_photos_count' => $deletedPhotosCount,
             ];
+
+            if ($photoErrors !== []) {
+                $payload['partial'] = true;
+                $payload['errors'] = $photoErrors;
+            }
+
+            return $payload;
         } catch (\InvalidArgumentException $e) {
             return ['error' => $e->getMessage()];
         } catch (\Throwable $e) {
