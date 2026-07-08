@@ -971,6 +971,33 @@ class ImageService
 
     /**
      * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}  $config
+     * @return array{size: float, bold: bool}
+     */
+    private function captionTextPayload(array $config): array
+    {
+        return [
+            'size' => (float) $config['font_size'],
+            'bold' => ! empty($config['bold']),
+        ];
+    }
+
+    /**
+     * @param  array{band_border_color: ?string, band_border_width: int}  $config
+     */
+    private function captionBorderInset(array $config): int
+    {
+        $borderWidth = (int) ($config['band_border_width'] ?? 0);
+        $borderColor = $config['band_border_color'] ?? null;
+
+        if ($borderWidth < 1 || ! is_string($borderColor) || $borderColor === '') {
+            return 0;
+        }
+
+        return max(1, min(12, $borderWidth));
+    }
+
+    /**
+     * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}  $config
      */
     private function composeImageWithCaptionBand(
         ImageInterface $image,
@@ -981,30 +1008,29 @@ class ImageService
         $padding = (int) $config['band_padding'];
         $imgW = $image->width();
         $imgH = $image->height();
-        $innerW = max(1, $imgW - (2 * $padding));
+        $borderInset = $this->captionBorderInset($config);
+        $innerW = max(1, $imgW - (2 * $padding) - (2 * $borderInset));
+        $textPayload = $this->captionTextPayload($config);
 
-        $wrapped = $this->wrapCaptionToWidth($captionText, $fontSize, $innerW);
-        $box = $this->estimateTextBox($wrapped, $fontSize);
-        $bandH = max((int) ceil($fontSize * 2.2), $box['height'] + (2 * $padding));
+        $wrapped = $this->wrapTextBlockToWidth($captionText, $innerW, $textPayload, $image);
+        $box = $this->measureTextBlockBox($wrapped, $textPayload, $image);
+        $bandH = max((int) ceil($fontSize * 2.2), $box['height'] + (2 * $padding) + (2 * $borderInset));
 
         $canvas = Image::createImage($imgW, $imgH + $bandH);
         $canvas->fill('#ffffff');
         $canvas->insert($image, 0, 0, Alignment::TOP_LEFT);
 
-        $textPayload = [
+        $renderPayload = array_merge($textPayload, [
             'content' => $wrapped,
-            'size' => $fontSize,
-            'color' => $config['color'],
-            'bold' => $config['bold'],
             'align' => 'center',
-        ];
+        ]);
 
         $canvas->text(
             $wrapped,
             (int) floor($imgW / 2),
-            $imgH + $padding,
-            function (FontFactory $font) use ($textPayload, $canvas): void {
-                $this->configureTextFont($font, $textPayload, $canvas);
+            $imgH + $padding + $borderInset,
+            function (FontFactory $font) use ($renderPayload, $canvas): void {
+                $this->configureTextFont($font, $renderPayload, $canvas);
             }
         );
 
@@ -1037,52 +1063,6 @@ class ImageService
             $r->size($width, $height)->at($x, $y);
             $r->border($borderColor, $borderWidth);
         });
-    }
-
-    private function wrapCaptionToWidth(string $text, float $fontSize, int $maxWidth): string
-    {
-        if ($maxWidth < 1 || $text === '') {
-            return $text;
-        }
-
-        $charWidth = max(1.0, $fontSize * 0.55);
-        $maxChars = max(1, (int) floor($maxWidth / $charWidth));
-        $out = [];
-
-        foreach (preg_split('/\r\n|\r|\n/', $text) ?: [''] as $paragraph) {
-            $paragraph = trim($paragraph);
-            if ($paragraph === '') {
-                $out[] = '';
-
-                continue;
-            }
-
-            $words = preg_split('/\s+/u', $paragraph) ?: [];
-            $current = '';
-
-            foreach ($words as $word) {
-                if ($word === '') {
-                    continue;
-                }
-
-                $trial = $current === '' ? $word : $current.' '.$word;
-
-                if (mb_strlen($trial) <= $maxChars) {
-                    $current = $trial;
-                } else {
-                    if ($current !== '') {
-                        $out[] = $current;
-                    }
-                    $current = $word;
-                }
-            }
-
-            if ($current !== '') {
-                $out[] = $current;
-            }
-        }
-
-        return implode("\n", $out);
     }
 
     /**
@@ -1190,11 +1170,13 @@ class ImageService
         $angle = (($angle % 360) + 360) % 360;
         $fontSize = (float) $config['font_size'];
         $padding = (int) $config['band_padding'];
+        $borderInset = $this->captionBorderInset($config);
         $edgeLength = ($angle === 90 || $angle === 270) ? $th : $tw;
-        $innerW = max(1, $edgeLength - (2 * $padding));
-        $wrapped = $this->wrapCaptionToWidth($captionText, $fontSize, $innerW);
-        $box = $this->estimateTextBox($wrapped, $fontSize);
-        $bandThickness = max((int) ceil($fontSize * 2.2), $box['height'] + (2 * $padding));
+        $innerW = max(1, $edgeLength - (2 * $padding) - (2 * $borderInset));
+        $textPayload = $this->captionTextPayload($config);
+        $wrapped = $this->wrapTextBlockToWidth($captionText, $innerW, $textPayload, $image);
+        $box = $this->measureTextBlockBox($wrapped, $textPayload, $image);
+        $bandThickness = max((int) ceil($fontSize * 2.2), $box['height'] + (2 * $padding) + (2 * $borderInset));
 
         if ($angle === 90) {
             $bandX = $tx + $tw;
@@ -1209,7 +1191,7 @@ class ImageService
             $bandW = $tw;
             $bandH = $bandThickness;
             $textX = $tx + (int) floor($tw / 2);
-            $textY = $bandY + $padding;
+            $textY = $bandY + $padding + $borderInset;
         } elseif ($angle === 270) {
             $bandX = $tx - $bandThickness;
             $bandY = $ty;
@@ -1223,7 +1205,7 @@ class ImageService
             $bandW = $tw;
             $bandH = $bandThickness;
             $textX = $tx + (int) floor($tw / 2);
-            $textY = $bandY + $padding;
+            $textY = $bandY + $padding + $borderInset;
         }
 
         $image->drawRectangle(function ($r) use ($bandW, $bandH, $bandX, $bandY): void {
@@ -1231,21 +1213,19 @@ class ImageService
             $r->background('#ffffff');
         });
 
-        $textPayload = [
+        $renderPayload = array_merge($textPayload, [
             'content' => $wrapped,
-            'size' => $fontSize,
             'color' => $config['color'],
-            'bold' => $config['bold'],
             'align' => 'center',
             'angle' => (float) $angle,
-        ];
+        ]);
 
         $image->text(
             $wrapped,
             $textX,
             $textY,
-            function (FontFactory $font) use ($textPayload, $image): void {
-                $this->configureTextFont($font, $textPayload, $image);
+            function (FontFactory $font) use ($renderPayload, $image): void {
+                $this->configureTextFont($font, $renderPayload, $image);
             }
         );
 
@@ -1343,7 +1323,7 @@ class ImageService
     {
         $fontPath = $this->resolveTextFontPath($text);
         if ($fontPath === null) {
-            return [$line];
+            return $this->wrapTextLineToWidthEstimated($line, $maxWidth, $text);
         }
 
         $naturalPx = max(6.0, min(900.0, (float) ($text['size'] ?? 24)));
@@ -1358,19 +1338,89 @@ class ImageService
         $current = '';
 
         foreach ($words as $word) {
+            foreach ($this->splitTtfWordToMaxWidth($word, $maxWidth, $fontPath, $nativeSize) as $segment) {
+                $candidate = $current === '' ? $segment : $current.' '.$segment;
+
+                if ($this->ttfTextWidth($fontPath, $nativeSize, $candidate) <= $maxWidth) {
+                    $current = $candidate;
+
+                    continue;
+                }
+
+                if ($current !== '') {
+                    $lines[] = $current;
+                }
+
+                $current = $segment;
+            }
+        }
+
+        if ($current !== '') {
+            $lines[] = $current;
+        }
+
+        return $lines !== [] ? $lines : [''];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitTtfWordToMaxWidth(string $word, int $maxWidth, string $fontPath, float $nativeSize): array
+    {
+        if ($word === '' || $this->ttfTextWidth($fontPath, $nativeSize, $word) <= $maxWidth) {
+            return [$word];
+        }
+
+        $parts = [];
+        $current = '';
+        $chars = preg_split('//u', $word, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        foreach ($chars as $char) {
+            $trial = $current.$char;
+
+            if ($current !== '' && $this->ttfTextWidth($fontPath, $nativeSize, $trial) > $maxWidth) {
+                $parts[] = $current;
+                $current = $char;
+            } else {
+                $current = $trial;
+            }
+        }
+
+        if ($current !== '') {
+            $parts[] = $current;
+        }
+
+        return $parts !== [] ? $parts : [$word];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function wrapTextLineToWidthEstimated(string $line, int $maxWidth, array $text): array
+    {
+        $fontSize = max(6.0, min(900.0, (float) ($text['size'] ?? 24)));
+        $charWidth = max(1.0, $fontSize * 0.55);
+        $maxChars = max(1, (int) floor($maxWidth / $charWidth));
+        $words = preg_split('/\s+/u', trim($line), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if ($words === []) {
+            return [''];
+        }
+
+        $lines = [];
+        $current = '';
+
+        foreach ($words as $word) {
             $candidate = $current === '' ? $word : $current.' '.$word;
 
-            if ($this->ttfTextWidth($fontPath, $nativeSize, $candidate) <= $maxWidth) {
+            if (mb_strlen($candidate) <= $maxChars) {
                 $current = $candidate;
-
-                continue;
+            } else {
+                if ($current !== '') {
+                    $lines[] = $current;
+                }
+                $current = $word;
             }
-
-            if ($current !== '') {
-                $lines[] = $current;
-            }
-
-            $current = $word;
         }
 
         if ($current !== '') {

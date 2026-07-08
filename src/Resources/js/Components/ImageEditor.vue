@@ -685,9 +685,9 @@
           :style="[photoCaptionBandStyle, captionBorderStyleForCanvas]"
         >
           <span
-            class="block w-full whitespace-pre-wrap break-words px-1"
+            class="block w-full whitespace-pre-wrap"
             :style="photoCaptionTextStyle"
-          >{{ formatCaptionText(photoCaptionApplied.number, photoCaptionApplied.description) }}</span>
+          >{{ wrappedCanvasCaptionText }}</span>
         </div>
 
         <!-- Recortes colados ou imagens arrastadas da barra lateral -->
@@ -732,13 +732,13 @@
           </div>
           <div
             v-if="ov.caption"
-            class="pointer-events-none absolute z-[1] flex items-center justify-center overflow-visible bg-white text-center"
+            class="pointer-events-none absolute z-[1] flex items-center justify-center overflow-hidden bg-white text-center"
             :style="[overlayCaptionBandStyle(ov), captionBorderStyleForOverlay(ov)]"
           >
             <span
-              class="block w-full whitespace-pre-wrap break-words px-1"
+              class="block w-full whitespace-pre-wrap"
               :style="photoCaptionTextStyle"
-            >{{ formatCaptionText(ov.caption.number, ov.caption.description) }}</span>
+            >{{ wrappedOverlayCaptionText(ov) }}</span>
           </div>
           <div
             v-show="ov.id === activeOverlayChromeId"
@@ -7539,39 +7539,92 @@ const formatCaptionText = (number, description) => {
   return desc ? `${numPart}${sep}${desc}` : numPart
 }
 
-const wrapCaptionTextToWidth = (text, fontSize, maxWidth) => {
-  if (!text || maxWidth < 1) {
+const splitWordToMaxWidth = (word, maxWidthPx, ctx) => {
+  if (!word || ctx.measureText(word).width <= maxWidthPx) {
+    return [word]
+  }
+
+  const parts = []
+  let current = ''
+
+  for (const char of [...word]) {
+    const trial = `${current}${char}`
+
+    if (current && ctx.measureText(trial).width > maxWidthPx) {
+      parts.push(current)
+      current = char
+    } else {
+      current = trial
+    }
+  }
+
+  if (current) {
+    parts.push(current)
+  }
+
+  return parts.length ? parts : [word]
+}
+
+const wrapCaptionTextToWidth = (text, fontSize, maxWidthPx, bold = false) => {
+  if (!text || maxWidthPx < 1) {
     return text || ''
   }
-  const charWidth = Math.max(1, fontSize * 0.55)
-  const maxChars = Math.max(1, Math.floor(maxWidth / charWidth))
+
+  const ctx = getTextMeasureCtx()
+  ctx.font = textMeasureFont(fontSize, bold)
   const out = []
 
-  for (const paragraph of text.split(/\r\n|\r|\n/)) {
+  for (const paragraph of String(text).split(/\r\n|\r|\n/)) {
     const trimmed = paragraph.trim()
     if (!trimmed) {
       out.push('')
       continue
     }
+
     const words = trimmed.split(/\s+/).filter(Boolean)
     let current = ''
+
     for (const word of words) {
-      const trial = current ? `${current} ${word}` : word
-      if (trial.length <= maxChars) {
-        current = trial
-      } else {
-        if (current) {
-          out.push(current)
+      for (const segment of splitWordToMaxWidth(word, maxWidthPx, ctx)) {
+        const candidate = current ? `${current} ${segment}` : segment
+
+        if (ctx.measureText(candidate).width <= maxWidthPx) {
+          current = candidate
+        } else {
+          if (current) {
+            out.push(current)
+          }
+          current = segment
         }
-        current = word
       }
     }
+
     if (current) {
       out.push(current)
     }
   }
 
   return out.join('\n')
+}
+
+const captionBandInnerWidthNat = (bandWidthNat, hasBorder) => {
+  const padding = captionBandPaddingNatural()
+  const borderW = hasBorder ? captionBandBorderWidthNatural() : 0
+
+  return Math.max(1, bandWidthNat - padding * 2 - borderW * 2)
+}
+
+const wrapCaptionForDisplay = (number, description, bandWidthNat, hasBorder) => {
+  const content = formatCaptionText(number, description)
+
+  if (!bandWidthNat) {
+    return content
+  }
+
+  const innerWDisp = Math.max(1, naturalUnitToDisplay(captionBandInnerWidthNat(bandWidthNat, hasBorder)))
+  const fontSizeDisp = Math.max(9, naturalTextSizeToDisplay(captionFontSizeNatural()))
+
+  return wrapCaptionTextToWidth(content, fontSizeDisp, innerWDisp, captionSettings.value.bold)
 }
 
 const captionFontSizeNatural = () =>
@@ -7621,18 +7674,21 @@ const captionBorderStyleForCanvas = computed(() => buildCaptionBorderStyle(canva
 
 const captionBorderStyleForOverlay = (ov) => buildCaptionBorderStyle(overlayCaptionHasBorder(ov))
 
-const estimateCaptionBandHeightNat = (number, description, widthNat) => {
+const estimateCaptionBandHeightNat = (number, description, widthNat, hasBorder = false) => {
   if (!widthNat || widthNat < 2) {
     return 0
   }
-  const fontSize = captionFontSizeNatural()
+
   const padding = captionBandPaddingNatural()
-  const innerW = Math.max(1, widthNat - padding * 2)
+  const borderW = hasBorder ? captionBandBorderWidthNatural() : 0
+  const fontSizeDisp = Math.max(9, naturalTextSizeToDisplay(captionFontSizeNatural()))
+  const innerWDisp = Math.max(1, naturalUnitToDisplay(captionBandInnerWidthNat(widthNat, hasBorder)))
   const content = formatCaptionText(number, description)
-  const wrapped = wrapCaptionTextToWidth(content, fontSize, innerW)
-  const lines = wrapped.split('\n').filter((l, i, a) => l !== '' || a.length > 1).length || 1
-  const textH = lines * fontSize * 1.3
-  return Math.max(Math.ceil(fontSize * 2.2), Math.ceil(textH + padding * 2))
+  const wrapped = wrapCaptionTextToWidth(content, fontSizeDisp, innerWDisp, captionSettings.value.bold)
+  const lines = wrapped.split('\n').filter((line, index, all) => line !== '' || all.length > 1).length || 1
+  const textHNat = displayTextSizeToNatural(lines * fontSizeDisp * 1.3)
+
+  return Math.max(Math.ceil(captionFontSizeNatural() * 2.2), Math.ceil(textHNat + padding * 2 + borderW * 2))
 }
 
 /** Espaço extra (px naturais) por baixo da imagem para legendas visíveis no ecrã. */
@@ -7653,7 +7709,8 @@ const compositionExtraBottomNat = computed(() => {
       estimateCaptionBandHeightNat(
         photoCaptionApplied.value.number,
         photoCaptionApplied.value.description,
-        el.naturalWidth
+        el.naturalWidth,
+        canvasCaptionHasBorder.value
       )
     )
   }
@@ -7666,7 +7723,8 @@ const compositionExtraBottomNat = computed(() => {
     const bandH = estimateCaptionBandHeightNat(
       ov.caption.number,
       ov.caption.description,
-      ov.width
+      ov.width,
+      overlayCaptionHasBorder(ov)
     )
     if (angle === 0) {
       extra = Math.max(extra, ov.y + ov.height + bandH - nh)
@@ -7737,7 +7795,8 @@ const photoCaptionBandStyle = computed(() => {
   const bandNat = estimateCaptionBandHeightNat(
     photoCaptionApplied.value.number,
     photoCaptionApplied.value.description,
-    el.naturalWidth
+    el.naturalWidth,
+    canvasCaptionHasBorder.value
   )
   return {
     left: `${m.ox}px`,
@@ -7749,13 +7808,53 @@ const photoCaptionBandStyle = computed(() => {
 
 const photoCaptionTextStyle = computed(() => {
   void imageNaturalVersion.value
+  const pad = naturalUnitToDisplay(captionBandPaddingNatural())
+
   return {
     fontSize: `${Math.max(9, naturalTextSizeToDisplay(captionFontSizeNatural()))}px`,
     color: captionSettings.value.color,
     fontWeight: captionSettings.value.bold ? '700' : '400',
-    lineHeight: 1.3
+    lineHeight: 1.3,
+    padding: `${Math.max(0, pad)}px`,
+    boxSizing: 'border-box',
+    maxWidth: '100%'
   }
 })
+
+const wrappedCanvasCaptionText = computed(() => {
+  void captionSettings.value
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+
+  if (!photoCaptionApplied.value) {
+    return ''
+  }
+
+  const el = imageRef.value
+
+  return wrapCaptionForDisplay(
+    photoCaptionApplied.value.number,
+    photoCaptionApplied.value.description,
+    el?.naturalWidth || 0,
+    canvasCaptionHasBorder.value
+  )
+})
+
+const wrappedOverlayCaptionText = (ov) => {
+  void captionSettings.value
+  void imageNaturalVersion.value
+
+  if (!ov?.caption) {
+    return ''
+  }
+
+  return wrapCaptionForDisplay(
+    ov.caption.number,
+    ov.caption.description,
+    ov.width,
+    overlayCaptionHasBorder(ov)
+  )
+}
 
 const hasActiveCaptions = computed(
   () => photoCaptionApplied.value !== null || imageOverlays.value.some((o) => o.caption)
@@ -7834,7 +7933,8 @@ const overlayCaptionBandStyle = (ov) => {
   const bandNat = estimateCaptionBandHeightNat(
     ov.caption.number,
     ov.caption.description,
-    ov.width
+    ov.width,
+    overlayCaptionHasBorder(ov)
   )
   const overlayDisp = naturalRectToDisplay(0, 0, ov.width, ov.height)
   const bandDisp = naturalRectToDisplay(0, 0, ov.width, bandNat)
