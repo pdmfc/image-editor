@@ -4,17 +4,20 @@ namespace PDMFC\ImageEditor\Services;
 
 use Illuminate\Support\Facades\Http;
 use PDMFC\ImageEditor\Support\CallbackRoute;
+use PDMFC\ImageEditor\Support\GalleryFolders;
 use PDMFC\ImageEditor\Support\GalleryUploadLimits;
+use PDMFC\ImageEditor\Support\QrUploadFolder;
 
 class QrCodeService
 {
     public function __construct(
         protected UserPhotoStorage $storage,
         protected CameraService $cameraService,
+        protected GalleryFolders $galleryFolders,
     ) {
     }
 
-    public function fetchQrCode(string|int|null $userId): array
+    public function fetchQrCode(string|int|null $userId, ?string $folderId = null): array
     {
         if ($userId === null || $userId === '') {
             return [
@@ -52,8 +55,11 @@ class QrCodeService
             ];
         }
 
+        $sanitizedUserId = $this->storage->sanitizeUserId($userId);
+        $this->rememberQrUploadFolder($userId, $sanitizedUserId, $folderId);
+
         $payload = [
-            'user_token' => $this->storage->sanitizeUserId($userId),
+            'user_token' => $sanitizedUserId,
             'endpoint' => $this->storage->callbackUrl($userId),
             'delivery_mode' => $deliveryMode,
         ];
@@ -74,6 +80,30 @@ class QrCodeService
         }
 
         return $this->normalizeQrResponse($response->body());
+    }
+
+    private function rememberQrUploadFolder(string|int $userId, string $sanitizedUserId, ?string $folderId): void
+    {
+        if (! $this->galleryFolders->enabled()) {
+            return;
+        }
+
+        $this->galleryFolders->ensureInitialized($userId);
+        $folderId = is_string($folderId) && $folderId !== '' ? $folderId : GalleryFolders::SYSTEM_ENTRADA_ID;
+
+        $valid = false;
+        foreach ($this->galleryFolders->listFolders($userId) as $folder) {
+            if (($folder['id'] ?? '') === $folderId) {
+                $valid = true;
+                break;
+            }
+        }
+
+        if (! $valid) {
+            $folderId = GalleryFolders::SYSTEM_ENTRADA_ID;
+        }
+
+        QrUploadFolder::remember($sanitizedUserId, $folderId);
     }
 
     private function normalizeQrResponse(string $body): array

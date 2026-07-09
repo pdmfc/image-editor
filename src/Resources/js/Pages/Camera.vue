@@ -1894,7 +1894,11 @@ const applyFoldersFromResponse = (data) => {
     return
   }
 
-  folders.value = Array.isArray(data?.folders) ? data.folders : []
+  // Em eventos realtime (ex.: upload por QR) pode não vir "folders".
+  // Nesse caso, preservamos as pastas actuais para evitar "desaparecerem" até refresh.
+  if (Array.isArray(data?.folders)) {
+    folders.value = data.folders
+  }
   ensureNewPhotoFolderId()
   pruneExpandedFolderBranches()
 }
@@ -2667,7 +2671,11 @@ const getQRCode = async () => {
     return
   }
   try {
-    const response = await axios.post('/api/camera/qrcode', userParams())
+    ensureNewPhotoFolderId()
+    const response = await axios.post('/api/camera/qrcode', {
+      ...userParams(),
+      ...newPhotoFolderParams()
+    })
     qrCodeData.value = response.data?.qr_image || response.data?.svg || ''
     showQRCode.value = true
   } catch (error) {

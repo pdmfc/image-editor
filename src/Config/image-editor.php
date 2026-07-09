@@ -28,6 +28,8 @@ return [
         'delivery_mode' => env('QRCODE_DELIVERY_MODE', 'callback_base64'),
         // URL base do callback (obrigatória para QR). O {userId} é acrescentado em código.
         'callback_url' => env('QRCODE_CALLBACK_URL'),
+        // Minutos em que a pasta escolhida ao abrir o QR se mantém para uploads do telemóvel.
+        'upload_folder_ttl_minutes' => max(5, (int) env('IMAGE_EDITOR_QR_UPLOAD_FOLDER_TTL', 1440)),
     ],
 
     'broadcasting' => [

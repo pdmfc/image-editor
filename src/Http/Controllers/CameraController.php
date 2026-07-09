@@ -24,9 +24,13 @@ class CameraController extends Controller
     {
         $request->validate([
             'user_id' => 'required',
+            'folder_id' => 'nullable|string|max:64',
         ]);
 
-        $result = $this->qrCodeService->fetchQrCode($request->input('user_id'));
+        $result = $this->qrCodeService->fetchQrCode(
+            $request->input('user_id'),
+            $request->input('folder_id')
+        );
 
         if (isset($result['error'])) {
             return response()->json(['error' => $result['error']], $result['status'] ?? 422);

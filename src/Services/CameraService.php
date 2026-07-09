@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Storage;
 use PDMFC\ImageEditor\Events\PhotosUploadedFromMobile;
 use PDMFC\ImageEditor\Support\GalleryFolders;
 use PDMFC\ImageEditor\Support\GalleryUploadLimits;
+use PDMFC\ImageEditor\Support\QrUploadFolder;
 use Intervention\Image\Encoders\JpegEncoder;
 use Intervention\Image\Laravel\Facades\Image;
 
@@ -184,6 +185,7 @@ class CameraService
             $files = $this->normalizeCallbackPayload($payload);
             $saved = 0;
             $newFilenames = [];
+            $qrFolderId = QrUploadFolder::resolve($this->storage->sanitizeUserId($userId));
 
             foreach ($files as $file) {
                 if (! is_array($file) || empty($file['name']) || empty($file['content'])) {
@@ -219,7 +221,7 @@ class CameraService
                 if (Storage::disk($this->disk())->put($this->storage->filePath($userId, $name), $binary)) {
                     $saved++;
                     $newFilenames[] = $name;
-                    $this->trackNewPhotoInGalleryOrder($userId, $name);
+                    $this->trackNewPhotoInGalleryOrder($userId, $name, $qrFolderId);
                 }
             }
 

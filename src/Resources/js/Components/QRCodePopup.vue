@@ -21,7 +21,7 @@
                     v-if="maxFiles != null && maxFiles > 0"
                     class="font-medium text-amber-700"
                 >
-                    O telemóvel só pode enviar {{ maxFiles }} imagem{{ maxFiles === 1 ? '' : 'ns' }} com este QR code.
+                    O telemóvel só pode enviar {{ maxFiles }} {{ maxFiles === 1 ? 'imagem' : 'imagens' }} com este QR code.
                 </p>
                 <p
                     v-if="maxUploadMb != null && maxUploadMb > 0"
