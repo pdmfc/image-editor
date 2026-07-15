@@ -98,6 +98,9 @@ class GalleryFolders
 
         $this->assignMissingFolderColors($folders);
 
+        $foldersOrder = $this->parseFoldersDisplayOrder($data, $folders);
+        $folders = $this->sortFoldersByOrder($folders, $foldersOrder);
+
         $assignments = [];
         foreach ($data['assignments'] ?? [] as $filename => $folderId) {
             $safeName = $this->storage->safeFilename((string) $filename);
@@ -111,7 +114,43 @@ class GalleryFolders
             'folders' => $folders,
             'assignments' => $assignments,
             'folder_order' => $this->parseFolderOrder($data),
+            'folders_order' => $foldersOrder,
         ];
+    }
+
+    /**
+     * @param  list<string>  $folderIds
+     */
+    public function reorderFolders(string|int $userId, array $folderIds): void
+    {
+        if (! $this->enabled()) {
+            throw new \RuntimeException('Pastas da galeria desactivadas.');
+        }
+
+        $this->ensureInitialized($userId);
+        $data = $this->read($userId);
+        $knownIds = array_map(fn (array $folder): string => (string) $folder['id'], $data['folders']);
+
+        $folderIds = array_values(array_unique(array_filter(array_map(
+            fn ($id) => trim((string) $id),
+            $folderIds
+        ))));
+
+        if ($folderIds === [] || count($folderIds) !== count($knownIds)) {
+            throw new \InvalidArgumentException('Lista de pastas inválida para ordenar.');
+        }
+
+        if (array_diff($knownIds, $folderIds) !== [] || array_diff($folderIds, $knownIds) !== []) {
+            throw new \InvalidArgumentException('Lista de pastas inválida para ordenar.');
+        }
+
+        if (($folderIds[0] ?? '') !== self::SYSTEM_ENTRADA_ID) {
+            throw new \InvalidArgumentException('A pasta Entrada tem de ficar em primeiro.');
+        }
+
+        $data['folders_order'] = $folderIds;
+        $data['folders'] = $this->sortFoldersByOrder($data['folders'], $folderIds);
+        $this->write($userId, $data);
     }
 
     /**
@@ -236,6 +275,7 @@ class GalleryFolders
             $folderId = self::SYSTEM_ENTRADA_ID;
         }
 
+        $this->removeFromAllFolderOrders($data, $filename);
         $data['assignments'][$filename] = $folderId;
         $this->appendToFolderOrder($data, $folderId, $filename);
         $this->write($userId, $data);
@@ -280,10 +320,22 @@ class GalleryFolders
         }
 
         $data = $this->read($userId);
-        $byFolder = [];
+        $unique = [];
 
         foreach ($photos as $photo) {
-            $folderId = (string) ($photo['folder_id'] ?? self::SYSTEM_ENTRADA_ID);
+            $filename = $this->storage->safeFilename((string) ($photo['filename'] ?? ''));
+            if ($filename === '') {
+                continue;
+            }
+
+            $photo['folder_id'] = (string) ($data['assignments'][$filename] ?? self::SYSTEM_ENTRADA_ID);
+            $unique[$filename] = $photo;
+        }
+
+        $byFolder = [];
+
+        foreach ($unique as $photo) {
+            $folderId = (string) $photo['folder_id'];
             $byFolder[$folderId][] = $photo;
         }
 
@@ -500,6 +552,12 @@ class GalleryFolders
 
         $folder = ['id' => $id, 'name' => $name, 'color' => $resolvedColor];
         $data['folders'][] = $folder;
+        $order = $data['folders_order'] ?? array_column($data['folders'], 'id');
+        if (! in_array($id, $order, true)) {
+            $order[] = $id;
+        }
+        $data['folders_order'] = $order;
+        $data['folders'] = $this->sortFoldersByOrder($data['folders'], $order);
         $this->write($userId, $data);
 
         return $folder;
@@ -569,6 +627,12 @@ class GalleryFolders
 
         unset($data['folder_order'][$folderId]);
 
+        $data['folders_order'] = array_values(array_filter(
+            $data['folders_order'] ?? array_column($data['folders'], 'id'),
+            fn (string $id): bool => $id !== $folderId
+        ));
+        $data['folders'] = $this->sortFoldersByOrder($data['folders'], $data['folders_order']);
+
         $this->write($userId, $data);
     }
 
@@ -576,7 +640,8 @@ class GalleryFolders
      * @return array{
      *     folders: list<array{id: string, name: string, system?: bool, color?: string}>,
      *     assignments: array<string, string>,
-     *     folder_order: array<string, list<string>>
+     *     folder_order: array<string, list<string>>,
+     *     folders_order: list<string>
      * }
      */
     private function defaultData(): array
@@ -585,7 +650,85 @@ class GalleryFolders
             'folders' => [$this->entradaFolder()],
             'assignments' => [],
             'folder_order' => [],
+            'folders_order' => [self::SYSTEM_ENTRADA_ID],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<array{id: string, name: string, system?: bool, color?: string}>  $folders
+     * @return list<string>
+     */
+    private function parseFoldersDisplayOrder(array $data, array $folders): array
+    {
+        $knownIds = array_map(fn (array $folder): string => (string) $folder['id'], $folders);
+        $order = [];
+
+        foreach ($data['folders_order'] ?? [] as $folderId) {
+            $id = (string) $folderId;
+            if ($id !== '' && in_array($id, $knownIds, true) && ! in_array($id, $order, true)) {
+                $order[] = $id;
+            }
+        }
+
+        foreach ($knownIds as $id) {
+            if (! in_array($id, $order, true)) {
+                $order[] = $id;
+            }
+        }
+
+        return $this->ensureEntradaFirst($order, $knownIds);
+    }
+
+    /**
+     * @param  list<string>  $order
+     * @param  list<string>  $knownIds
+     * @return list<string>
+     */
+    private function ensureEntradaFirst(array $order, array $knownIds): array
+    {
+        $order = array_values(array_filter(
+            $order,
+            fn (string $id): bool => $id !== self::SYSTEM_ENTRADA_ID
+        ));
+
+        if (in_array(self::SYSTEM_ENTRADA_ID, $knownIds, true)) {
+            array_unshift($order, self::SYSTEM_ENTRADA_ID);
+        }
+
+        return array_values(array_filter(
+            $order,
+            fn (string $id): bool => in_array($id, $knownIds, true)
+        ));
+    }
+
+    /**
+     * @param  list<array{id: string, name: string, system?: bool, color?: string}>  $folders
+     * @param  list<string>  $order
+     * @return list<array{id: string, name: string, system?: bool, color?: string}>
+     */
+    private function sortFoldersByOrder(array $folders, array $order): array
+    {
+        $byId = [];
+
+        foreach ($folders as $folder) {
+            $byId[(string) $folder['id']] = $folder;
+        }
+
+        $sorted = [];
+
+        foreach ($order as $folderId) {
+            if (isset($byId[$folderId])) {
+                $sorted[] = $byId[$folderId];
+                unset($byId[$folderId]);
+            }
+        }
+
+        foreach ($byId as $folder) {
+            $sorted[] = $folder;
+        }
+
+        return $sorted;
     }
 
     /**

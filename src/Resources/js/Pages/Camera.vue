@@ -110,17 +110,41 @@
             <div class="shrink-0 border-b border-gray-100 bg-gray-50/80 px-2 py-2.5">
               <div class="mb-2 flex items-center justify-between gap-2 px-1">
                 <p class="text-xs font-medium text-gray-500">Pastas</p>
-                <button
-                  type="button"
-                  class="rounded-md p-1 text-gray-500 transition hover:bg-white hover:text-gray-700 disabled:opacity-40"
-                  :class="{
-                    'bg-white text-blue-600 ring-1 ring-blue-200':
-                      folderEditor.open && folderEditor.mode === 'create'
-                  }"
-                  :disabled="folderActionLoading"
-                  :title="folderEditor.open && folderEditor.mode === 'create' ? 'Cancelar' : 'Nova pasta'"
-                  @click="toggleFolderCreate"
-                >
+                <div class="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    class="rounded-md p-1 text-gray-500 transition hover:bg-white hover:text-gray-700 disabled:opacity-40"
+                    :class="{
+                      'bg-white text-amber-600 ring-1 ring-amber-200': folderReorderMode
+                    }"
+                    :disabled="folderActionLoading || folders.length < 2"
+                    :title="
+                      folderReorderMode
+                        ? 'Sair da ordenação de pastas'
+                        : 'Ordenar pastas'
+                    "
+                    @click="toggleFolderReorderMode"
+                  >
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-md p-1 text-gray-500 transition hover:bg-white hover:text-gray-700 disabled:opacity-40"
+                    :class="{
+                      'bg-white text-blue-600 ring-1 ring-blue-200':
+                        folderEditor.open && folderEditor.mode === 'create'
+                    }"
+                    :disabled="folderActionLoading || folderReorderMode"
+                    :title="folderEditor.open && folderEditor.mode === 'create' ? 'Cancelar' : 'Nova pasta'"
+                    @click="toggleFolderCreate"
+                  >
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       v-if="folderEditor.open && folderEditor.mode === 'create'"
@@ -137,8 +161,17 @@
                       d="M12 4v16m8-8H4"
                     />
                   </svg>
-                </button>
+                  </button>
+                </div>
               </div>
+
+              <p
+                v-if="folderReorderMode"
+                class="mb-2 px-1 text-[10px] leading-snug text-amber-700"
+              >
+                Arraste as pastas para reordenar. A pasta Entrada fica sempre em primeiro.
+                <span v-if="folderReorderSaving" class="text-amber-500"> A guardar…</span>
+              </p>
 
               <div
                 v-if="folderEditor.open"
@@ -256,7 +289,7 @@
               >
                 <p class="text-[10px] leading-snug text-violet-700">
                   A ordenar em <span class="font-semibold">{{ reorderFolderName }}</span>.
-                  Arraste as imagens; com 2 ou mais selecionadas, o grupo move-se em conjunto.
+                  Clique no nome de outra pasta para mudar. Arraste as imagens; com 2 ou mais selecionadas, o grupo move-se em conjunto.
                   <span v-if="reorderSaving" class="text-violet-500"> A guardar…</span>
                 </p>
                 <div class="flex flex-wrap items-center gap-1.5">
@@ -283,7 +316,7 @@
               <div v-if="bulkSelectMode" class="mt-2 space-y-1.5">
                 <p class="text-[10px] leading-snug text-gray-600">
                   A seleccionar em <span class="font-semibold">{{ bulkFolderName }}</span>.
-                  Toque nas imagens e clique Eliminar. Para mover, arraste para outra pasta.
+                  Clique no nome de outra pasta para mudar. Toque nas imagens e clique Eliminar.
                 </p>
                 <div class="flex flex-wrap items-center gap-1.5">
                   <span class="text-[10px] font-medium text-gray-600">
@@ -350,6 +383,8 @@
               :folder-photo-count="folderPhotoCount"
               :photo-folder-id="photoFolderId"
               :live-thumb-urls="galleryLiveThumbUrls"
+              :folder-reorder-mode="folderReorderMode"
+              :folder-reorder-saving="folderReorderSaving"
               @reorder-pointer-down="onFolderReorderPointerDown"
               @reorder-toggle="toggleReorderSelection"
               @toggle-branch="toggleFolderBranch"
@@ -368,6 +403,7 @@
               @use-in-form="usePhotoInForm"
               @duplicate="handleDuplicate"
               @delete-photo="handleConfirmDelete"
+              @folder-reorder="handleFolderReorder"
             />
             </template>
           </div>
@@ -832,11 +868,23 @@ const photosInFolder = (folderId) =>
 
 const toggleFolderBranch = (folderId) => {
   const next = new Set(expandedFolderBranches.value)
-  if (next.has(folderId)) {
-    next.delete(folderId)
-  } else {
+  const willExpand = !next.has(folderId)
+
+  if (willExpand) {
     next.add(folderId)
+    if (bulkSelectMode.value) {
+      bulkFolderId.value = folderId
+      bulkSelectedFilenames.value = []
+    }
+    if (reorderMode.value) {
+      reorderFolderId.value = folderId
+      reorderSelection.value = []
+      resetReorderDragState()
+    }
+  } else {
+    next.delete(folderId)
   }
+
   expandedFolderBranches.value = next
 }
 
@@ -899,6 +947,12 @@ const bulkFolderId = ref(null)
 const bulkFolderName = computed(() => folderNameById(bulkFolderId.value))
 
 const resolveActiveFolderId = () => {
+  if (galleryFoldersEnabled.value && folders.value.length > 0) {
+    if (newPhotoFolderId.value && folders.value.some((folder) => folder.id === newPhotoFolderId.value)) {
+      return newPhotoFolderId.value
+    }
+  }
+
   if (selectedPhoto.value) {
     return photoFolderId(selectedPhoto.value)
   }
@@ -910,6 +964,13 @@ const resolveActiveFolderId = () => {
   }
 
   if (expanded.length > 1) {
+    const nonEntrada = expanded.find(
+      (folderId) => folderId !== 'entrada' && folders.value.some((folder) => folder.id === folderId)
+    )
+    if (nonEntrada) {
+      return nonEntrada
+    }
+
     for (const folder of folders.value) {
       if (expandedFolderBranches.value.has(folder.id)) {
         return folder.id
@@ -1031,6 +1092,8 @@ const isDropTargetActive = ref(false)
 const pendingCanvasDrag = ref(null)
 const bulkSelectMode = ref(false)
 const bulkSelectedFilenames = ref([])
+const folderReorderMode = ref(false)
+const folderReorderSaving = ref(false)
 const bulkDeleting = ref(false)
 const reorderMode = ref(false)
 const galleryListRef = ref(null)
@@ -1493,6 +1556,7 @@ const toggleBulkSelection = (filename) => {
 const toggleBulkSelectMode = () => {
   bulkSelectMode.value = !bulkSelectMode.value
   if (bulkSelectMode.value) {
+    folderReorderMode.value = false
     reorderMode.value = false
     reorderFolderId.value = null
     resetReorderDragState()
@@ -1509,6 +1573,7 @@ const toggleBulkSelectMode = () => {
 const toggleReorderMode = () => {
   reorderMode.value = !reorderMode.value
   if (reorderMode.value) {
+    folderReorderMode.value = false
     bulkSelectMode.value = false
     bulkFolderId.value = null
     bulkSelectedFilenames.value = []
@@ -1520,6 +1585,60 @@ const toggleReorderMode = () => {
     reorderFolderId.value = null
     reorderSelection.value = []
     resetReorderDragState()
+  }
+}
+
+const toggleFolderReorderMode = () => {
+  folderReorderMode.value = !folderReorderMode.value
+  if (folderReorderMode.value) {
+    bulkSelectMode.value = false
+    bulkFolderId.value = null
+    bulkSelectedFilenames.value = []
+    reorderMode.value = false
+    reorderFolderId.value = null
+    reorderSelection.value = []
+    resetReorderDragState()
+    closeFolderEditor()
+    collapseAllFolderBranches()
+  }
+}
+
+const handleFolderReorder = async (folderIds) => {
+  if (!galleryFoldersEnabled.value || !requireUserId() || !Array.isArray(folderIds)) {
+    return
+  }
+
+  const previous = folders.value.map((folder) => folder.id).join('\0')
+  const next = folderIds.join('\0')
+  if (previous === next) {
+    return
+  }
+
+  const byId = new Map(folders.value.map((folder) => [folder.id, folder]))
+  folders.value = folderIds.map((id) => byId.get(id)).filter(Boolean)
+
+  folderReorderSaving.value = true
+  try {
+    const response = await axios.post('/api/camera/folders/reorder', {
+      folder_ids: folderIds,
+      ...userParams()
+    })
+    if (response.data?.error) {
+      throw new Error(response.data.error)
+    }
+    if (Array.isArray(response.data?.folders)) {
+      folders.value = response.data.folders
+    }
+  } catch (error) {
+    console.error(error)
+    await loadPhotos({ silent: true, autoSelectFirst: false })
+    showNotification(
+      'error',
+      'Erro',
+      error.response?.data?.error || error.message || 'Não foi possível guardar a ordem das pastas'
+    )
+  } finally {
+    folderReorderSaving.value = false
   }
 }
 
@@ -1854,7 +1973,7 @@ const persistGalleryOrder = async (folderId = null) => {
   try {
     const { data } = await axios.post('/api/camera/photos/reorder', payload)
     if (data?.photos) {
-      photos.value = data.photos
+      photos.value = normalizePhotosList(data.photos)
     }
     applyFoldersFromResponse(data)
   } catch (error) {

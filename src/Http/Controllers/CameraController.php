@@ -356,4 +356,28 @@ class CameraController extends Controller
 
         return response()->json($result);
     }
+
+    public function reorderGalleryFolders(Request $request): JsonResponse
+    {
+        if (! config('image-editor.gallery.folders_enabled', false)) {
+            return response()->json(['error' => 'Pastas da galeria desactivadas.'], 404);
+        }
+
+        $request->validate([
+            'user_id' => 'required',
+            'folder_ids' => 'required|array|min:1',
+            'folder_ids.*' => 'string|max:64',
+        ]);
+
+        $result = $this->cameraService->reorderGalleryFolders(
+            $request->input('user_id'),
+            $request->input('folder_ids', [])
+        );
+
+        if (isset($result['error'])) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
+    }
 }

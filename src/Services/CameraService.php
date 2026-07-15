@@ -417,8 +417,11 @@ class CameraService
                 return ['error' => 'Falha ao duplicar a foto'];
             }
 
-            $this->trackNewPhotoInGalleryOrder($userId, $newFilename);
-            $this->galleryFolders->assignDuplicateFromSource($userId, $safeName, $newFilename);
+            $folderId = $this->galleryFolders->folderIdForPhoto($userId, $safeName);
+            if ($this->storage->readGalleryOrder($userId) !== []) {
+                $this->storage->appendToGalleryOrder($userId, $newFilename);
+            }
+            $this->galleryFolders->assignNewPhoto($userId, $newFilename, $folderId);
             $fullPath = Storage::disk($this->disk())->path($newPath);
 
             $photo = [
@@ -723,6 +726,25 @@ class CameraService
             $this->galleryFolders->movePhotos($userId, $filenames, $folderId);
 
             return $this->getPhotos($userId);
+        } catch (\InvalidArgumentException $e) {
+            return ['error' => $e->getMessage()];
+        } catch (\Throwable $e) {
+            return ['error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * @param  list<string>  $folderIds
+     */
+    public function reorderGalleryFolders(string|int $userId, array $folderIds): array
+    {
+        try {
+            $this->galleryFolders->reorderFolders($userId, $folderIds);
+
+            return [
+                'success' => true,
+                'folders' => $this->galleryFolders->listFolders($userId),
+            ];
         } catch (\InvalidArgumentException $e) {
             return ['error' => $e->getMessage()];
         } catch (\Throwable $e) {

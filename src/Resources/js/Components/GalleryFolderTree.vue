@@ -25,7 +25,9 @@ const props = defineProps({
   canDragPhotoToCanvas: { type: Function, required: true },
   folderPhotoCount: { type: Function, required: true },
   photoFolderId: { type: Function, required: true },
-  liveThumbUrls: { type: Object, default: () => ({}) }
+  liveThumbUrls: { type: Object, default: () => ({}) },
+  folderReorderMode: { type: Boolean, default: false },
+  folderReorderSaving: { type: Boolean, default: false }
 })
 
 const emit = defineEmits([
@@ -46,12 +48,17 @@ const emit = defineEmits([
   'reorder-pointer-down',
   'use-in-form',
   'duplicate',
-  'delete-photo'
+  'delete-photo',
+  'folder-reorder'
 ])
 
 const treeListRef = ref(null)
 const scrollRaf = ref(null)
 const scrollVelocity = ref(0)
+const folderDragFromIndex = ref(null)
+const folderDropBeforeIndex = ref(null)
+
+const FOLDER_DRAG_MIME = 'application/x-image-editor-folder-reorder'
 
 const SCROLL_EDGE = 52
 const SCROLL_MAX_SPEED = 18
@@ -83,8 +90,79 @@ const isBulkActiveInFolder = (folderId) =>
   props.bulkSelectMode && props.bulkFolderId === folderId
 
 const isThumbnailDraggable = (photo) =>
-  props.canDragPhotoToCanvas(photo) ||
-  (props.canDragPhotoToFolder(photo) && !props.bulkSelectMode && !props.reorderMode)
+  !props.folderReorderMode &&
+  (props.canDragPhotoToCanvas(photo) ||
+    (props.canDragPhotoToFolder(photo) && !props.bulkSelectMode && !props.reorderMode))
+
+const canDragFolderRow = (folder, index) =>
+  props.folderReorderMode && !folder?.system && index > 0
+
+const resetFolderDragState = () => {
+  folderDragFromIndex.value = null
+  folderDropBeforeIndex.value = null
+}
+
+const onFolderRowDragStart = (index, event) => {
+  const folder = props.folders[index]
+  if (!canDragFolderRow(folder, index)) {
+    event.preventDefault()
+    return
+  }
+
+  folderDragFromIndex.value = index
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData(FOLDER_DRAG_MIME, folder.id)
+}
+
+const onFolderRowDragOver = (index, event) => {
+  if (props.folderReorderMode && folderDragFromIndex.value !== null && index > 0) {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    folderDropBeforeIndex.value = index
+    return
+  }
+
+  if (!props.folderReorderMode && props.isDraggingPhotoToFolder) {
+    emit('folder-drag-over', props.folders[index]?.id, event)
+  }
+}
+
+const onFolderRowDragLeave = (index, event) => {
+  if (props.folderReorderMode) {
+    folderDropBeforeIndex.value = null
+    return
+  }
+
+  emit('folder-drag-leave', props.folders[index]?.id, event)
+}
+
+const onFolderRowDrop = (index, event) => {
+  if (props.folderReorderMode && folderDragFromIndex.value !== null && index > 0) {
+    event.preventDefault()
+    event.stopPropagation()
+    const from = folderDragFromIndex.value
+    if (from !== index) {
+      const list = [...props.folders]
+      const [moved] = list.splice(from, 1)
+      let target = index
+      if (from < target) {
+        target -= 1
+      }
+      list.splice(target, 0, moved)
+      emit('folder-reorder', list.map((folder) => folder.id))
+    }
+    resetFolderDragState()
+    return
+  }
+
+  if (!props.folderReorderMode) {
+    emit('folder-drop', props.folders[index]?.id, event)
+  }
+}
+
+const onFolderRowDragEnd = () => {
+  resetFolderDragState()
+}
 
 const folderAccentStyle = (folder) => ({
   color: folderDisplayColor(folder)
@@ -93,6 +171,10 @@ const folderAccentStyle = (folder) => ({
 const folderButtonStyle = (folder) => {
   if (isReorderActiveInFolder(folder.id) || isBulkActiveInFolder(folder.id)) {
     return {}
+  }
+
+  if (props.folderReorderMode && folderDropBeforeIndex.value && props.folders[folderDropBeforeIndex.value]?.id === folder.id) {
+    return folderTintStyles(folder, { dropTarget: true })
   }
 
   if (props.folderDropTargetId === folder.id) {
@@ -210,7 +292,8 @@ onUnmounted(() => {
           <button
             v-if="!allExpanded"
             type="button"
-            class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+            class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+            :disabled="folderReorderMode"
             @click="emit('expand-all')"
           >
             Expandir tudo
@@ -218,7 +301,8 @@ onUnmounted(() => {
           <button
             v-else-if="anyExpanded"
             type="button"
-            class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100"
+            class="rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+            :disabled="folderReorderMode"
             @click="emit('collapse-all')"
           >
             Recolher tudo
@@ -234,16 +318,25 @@ onUnmounted(() => {
       @dragover="onTreeDragOver"
     >
       <li
-        v-for="folder in folders"
+        v-for="(folder, folderIndex) in folders"
         :key="folder.id"
         class="gallery-tree-branch"
-        @dragenter="emit('folder-drag-over', folder.id, $event)"
-        @dragover="emit('folder-drag-over', folder.id, $event)"
-        @dragleave="emit('folder-drag-leave', folder.id, $event)"
-        @drop="emit('folder-drop', folder.id, $event)"
+        :class="{
+          'opacity-60': folderReorderMode && folderDragFromIndex === folderIndex,
+          'cursor-grab': canDragFolderRow(folder, folderIndex),
+          'active:cursor-grabbing': canDragFolderRow(folder, folderIndex)
+        }"
+        :draggable="canDragFolderRow(folder, folderIndex)"
+        @dragstart="onFolderRowDragStart(folderIndex, $event)"
+        @dragover="onFolderRowDragOver(folderIndex, $event)"
+        @dragleave="onFolderRowDragLeave(folderIndex, $event)"
+        @drop="onFolderRowDrop(folderIndex, $event)"
+        @dragend="onFolderRowDragEnd"
+        @dragenter="onFolderRowDragOver(folderIndex, $event)"
       >
         <div class="group flex items-center gap-0.5">
           <button
+            v-if="!folderReorderMode"
             type="button"
             class="gallery-tree-chevron"
             :class="{ 'gallery-tree-chevron--expanded': isExpanded(folder.id) }"
@@ -255,22 +348,39 @@ onUnmounted(() => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
           </button>
+          <span
+            v-else-if="canDragFolderRow(folder, folderIndex)"
+            class="gallery-tree-chevron flex items-center justify-center text-gray-400"
+            title="Arrastar para reordenar"
+          >
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+            </svg>
+          </span>
+          <span v-else class="gallery-tree-chevron" aria-hidden="true" />
           <button
             type="button"
             class="gallery-folder-btn min-w-0 flex-1"
             :style="folderButtonStyle(folder)"
             :class="{
               'gallery-folder-btn--reorder-target': isReorderActiveInFolder(folder.id),
-              'gallery-folder-btn--bulk-target': isBulkActiveInFolder(folder.id)
+              'gallery-folder-btn--bulk-target': isBulkActiveInFolder(folder.id),
+              'gallery-folder-btn--folder-reorder-target':
+                folderReorderMode && folderDropBeforeIndex === folderIndex
             }"
+            :disabled="folderReorderMode && folderReorderSaving"
             :title="
-              reorderMode
-                ? 'Seleccionar pasta para ordenar'
-                : bulkSelectMode
-                  ? 'Seleccionar pasta para eliminar'
-                  : 'Abrir pasta'
+              folderReorderMode
+                ? folder.system
+                  ? 'A pasta Entrada fica sempre em primeiro'
+                  : 'Arraste esta pasta para reordenar'
+                : reorderMode
+                  ? 'Seleccionar pasta para ordenar'
+                  : bulkSelectMode
+                    ? 'Seleccionar pasta para eliminar'
+                    : 'Abrir pasta'
             "
-            @click="emit('select-folder', folder.id)"
+            @click="!folderReorderMode && emit('select-folder', folder.id)"
           >
             <svg
               class="gallery-folder-icon"
@@ -294,7 +404,7 @@ onUnmounted(() => {
             >{{ folderPhotoCount(folder.id) }}</span>
           </button>
           <div
-            v-if="!folder.system"
+            v-if="!folder.system && !folderReorderMode"
             class="flex shrink-0 items-center gap-0.5 pr-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
           >
             <button
@@ -331,7 +441,7 @@ onUnmounted(() => {
         </div>
 
         <ul
-          v-if="isExpanded(folder.id)"
+          v-if="isExpanded(folder.id) && !folderReorderMode"
           class="gallery-tree-children"
           :data-reorder-folder="folder.id"
         >
@@ -509,6 +619,10 @@ onUnmounted(() => {
 
 .gallery-folder-btn--bulk-target {
   @apply border-red-400 bg-red-50 font-medium text-red-900 ring-2 ring-red-200;
+}
+
+.gallery-folder-btn--folder-reorder-target {
+  @apply border-amber-400 bg-amber-50 ring-2 ring-amber-200;
 }
 
 .gallery-folder-icon {

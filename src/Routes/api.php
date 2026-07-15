@@ -24,6 +24,7 @@ Route::middleware($browserMiddleware)->group(function () {
     Route::post('/camera/photos/reorder', [CameraController::class, 'reorderPhotos']);
     Route::post('/camera/photos/move', [CameraController::class, 'movePhotosToFolder']);
     Route::post('/camera/folders', [CameraController::class, 'createGalleryFolder']);
+    Route::post('/camera/folders/reorder', [CameraController::class, 'reorderGalleryFolders']);
     Route::patch('/camera/folders/{folderId}', [CameraController::class, 'renameGalleryFolder']);
     Route::delete('/camera/folders/{folderId}', [CameraController::class, 'deleteGalleryFolder']);
     Route::post('/image/edit', [ImageController::class, 'edit'])->name('image-editor.edit');
