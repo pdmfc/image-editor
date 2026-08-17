@@ -51,7 +51,8 @@
           class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white disabled:opacity-35 disabled:pointer-events-none"
         >
           <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v5h5" />
           </svg>
         </button>
         <button
@@ -293,6 +294,8 @@
           :src="displayImageUrl"
           alt="Imagem sendo editada"
           ref="imageRef"
+          draggable="false"
+          @dragstart.prevent
           @load="onImageLoad"
           @mousedown="onImageMouseDown"
           @contextmenu.prevent="onImageContextMenu"
@@ -511,12 +514,16 @@
             <path v-else-if="bezierDraftPathD" :d="bezierDraftPathD" />
           </g>
         </svg>
-        <!-- Área de desfoque local: só o retângulo captura eventos -->
+        <!-- Área de desfoque local: camada acima das imagens para desenhar/ajustar o retângulo -->
         <div
           v-if="showBlurRegion && blurShapeMode === 'rectangle'"
-          class="absolute inset-0 z-10 pointer-events-none"
+          class="absolute inset-0 z-[50] cursor-crosshair touch-none"
+          title="Arrastar para desenhar a zona de desfoque"
+          @mousedown.self.prevent="startEffectRectDraw('blur', $event)"
+          @touchstart.self.prevent="startEffectRectDraw('blur', $event)"
         >
           <div
+            v-show="blurSize.width > 2 && blurSize.height > 2"
             class="absolute border-2 border-purple-400 border-dashed shadow-lg pointer-events-auto bg-black/20"
             :style="blurRegionStyle"
           >
@@ -564,9 +571,13 @@
 
         <div
           v-if="showPixelateRegion && pixelateShapeMode === 'rectangle'"
-          class="absolute inset-0 z-10 pointer-events-none"
+          class="absolute inset-0 z-[50] cursor-crosshair touch-none"
+          title="Arrastar para desenhar a zona de pixelização"
+          @mousedown.self.prevent="startEffectRectDraw('pixelate', $event)"
+          @touchstart.self.prevent="startEffectRectDraw('pixelate', $event)"
         >
           <div
+            v-show="pixelateSize.width > 2 && pixelateSize.height > 2"
             class="absolute border-2 border-amber-400 border-dashed shadow-lg pointer-events-auto bg-amber-500/15"
             :style="pixelateRegionStyle"
           >
@@ -712,13 +723,16 @@
           :style="overlayLayerStyle(ov)"
         >
           <div
-            class="relative h-full w-full cursor-move overflow-visible rounded-sm"
-            :class="
+            class="relative h-full w-full overflow-visible rounded-sm"
+            :class="[
+              canMoveImageOverlays ? 'cursor-move' : 'pointer-events-none',
               collageOverlayGhostMove || ov.id !== activeOverlayChromeId
                 ? 'bg-transparent'
                 : 'bg-black/20'
-            "
+            ]"
             :title="overlayMoveTitle"
+            draggable="false"
+            @dragstart.prevent
             @mousedown.stop="startOverlayMove($event, ov.id)"
             @touchstart.stop="startOverlayMove($event, ov.id)"
             @contextmenu.prevent.stop="onOverlayContextMenu($event, ov.id)"
@@ -741,14 +755,14 @@
             >{{ wrappedOverlayCaptionText(ov) }}</span>
           </div>
           <div
-            v-show="ov.id === activeOverlayChromeId"
+            v-show="ov.id === activeOverlayChromeId && canMoveImageOverlays"
             class="absolute -bottom-1 -right-1 z-10 h-3 w-3 cursor-se-resize rounded-sm border border-sky-300 bg-sky-600/90"
             title="Redimensionar"
             @mousedown.stop.prevent="startOverlayResize($event, ov.id)"
             @touchstart.stop.prevent="startOverlayResize($event, ov.id)"
           ></div>
           <button
-            v-show="ov.id === activeOverlayChromeId"
+            v-show="ov.id === activeOverlayChromeId && canMoveImageOverlays"
             type="button"
             title="Remover imagem"
             class="absolute -right-2 -top-2 z-10 flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-red-500 text-xs text-white shadow"
@@ -1010,7 +1024,7 @@
             :class="{ 'bg-blue-500': showCrop }"
           >
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3v14a1 1 0 001 1h14M3 6h14a1 1 0 011 1v14" />
             </svg>
           </button>
 
@@ -1381,7 +1395,7 @@
           <!-- Botão de Rotação -->
           <button
             type="button"
-            title="Rodar 90° no sentido horário"
+            :title="isCollageComposition && selectedOverlayId ? 'Rodar a imagem seleccionada 90° no sentido horário' : 'Rodar 90° no sentido horário'"
             @click="rotateImage"
             class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
           >
@@ -2993,6 +3007,8 @@ let cropResizePreviewRaf = 0
 const isDraggingPixelatePan = ref(false)
 const pixelatePanGrab = ref({ x: 0, y: 0 })
 let pixelatePanPreviewRaf = 0
+const effectRectDraw = ref(null)
+let effectRectDrawPreviewRaf = 0
 let pixelateBrushCanvas = null
 let pixelateBrushCtx = null
 let pixelBrushMaskW = 0
@@ -4011,6 +4027,202 @@ const exportBrushMaskCanvas = (canvas) => {
   }
 }
 
+const loadMaskCanvasFromDataUrl = (dataUrl, width, height) =>
+  new Promise((resolve) => {
+    const w = Math.max(1, Math.round(width))
+    const h = Math.max(1, Math.round(height))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      resolve(null)
+      return
+    }
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, w, h)
+    if (!dataUrl) {
+      resolve(canvas)
+      return
+    }
+    const img = new window.Image()
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, w, h)
+      resolve(canvas)
+    }
+    img.onerror = () => resolve(canvas)
+    img.src = dataUrl
+  })
+
+const stampRectOnMaskCanvas = (canvas, rect) => {
+  const ctx = canvas.getContext('2d')
+  if (!ctx || !rect) {
+    return
+  }
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height)
+}
+
+const writeOverlayEffectPatch = (overlayId, patch) => {
+  const idx = imageOverlays.value.findIndex((ov) => ov.id === overlayId)
+  if (idx < 0) {
+    return
+  }
+  const ov = imageOverlays.value[idx]
+  const effects = { ...(ov.effects || {}), ...patch }
+  Object.keys(patch).forEach((key) => {
+    if (patch[key] === undefined) {
+      delete effects[key]
+    }
+  })
+  const updated = [...imageOverlays.value]
+  updated[idx] = {
+    ...ov,
+    effects: Object.keys(effects).length > 0 ? effects : null
+  }
+  imageOverlays.value = updated
+}
+
+const currentEffectNaturalRect = (kind) => {
+  if (kind === 'pixelate') {
+    if (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle') {
+      return capturePixelateRegionFromDisplay()
+    }
+    return committedPixelateRegion.value ? { ...committedPixelateRegion.value } : null
+  }
+  if (showBlurRegion.value && blurShapeMode.value === 'rectangle') {
+    return captureBlurRegionFromDisplay()
+  }
+  return committedBlurRegion.value ? { ...committedBlurRegion.value } : null
+}
+
+const stampNaturalRectIntoEffectMask = async (kind, naturalRect) => {
+  if (!naturalRect || naturalRect.width < 4 || naturalRect.height < 4) {
+    return false
+  }
+  const isPixelate = kind === 'pixelate'
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    const ov = imageOverlays.value.find((item) => item.id === selectedOverlayId.value)
+    if (!ov) {
+      return false
+    }
+    const local = canvasRectToOverlayLocal(naturalRect, ov)
+    if (!local) {
+      return false
+    }
+    const existing = isPixelate
+      ? ov.effects?.pixelate_mask || committedPixelateMask.value
+      : ov.effects?.blur_mask || committedBlurMask.value
+    const canvas = await loadMaskCanvasFromDataUrl(existing, ov.width, ov.height)
+    if (!canvas) {
+      return false
+    }
+    stampRectOnMaskCanvas(canvas, local)
+    const dataUrl = exportBrushMaskCanvas(canvas)
+    if (!dataUrl) {
+      return false
+    }
+    if (isPixelate) {
+      ensurePixelateEffectStrength()
+      committedPixelateMask.value = dataUrl
+      committedPixelateRegion.value = null
+      writeOverlayEffectPatch(ov.id, {
+        pixelate: pixelate.value || DEFAULT_PIXELATE_BLOCK,
+        pixelate_mask: dataUrl,
+        pixelate_region: undefined
+      })
+    } else {
+      ensureBlurEffectStrength()
+      committedBlurMask.value = dataUrl
+      committedBlurRegion.value = null
+      writeOverlayEffectPatch(ov.id, {
+        blur: blur.value || DEFAULT_BLUR_STRENGTH,
+        blur_mask: dataUrl,
+        blur_region: undefined
+      })
+    }
+    return true
+  }
+
+  const el = imageRef.value
+  if (!el?.naturalWidth || !el.naturalHeight) {
+    return false
+  }
+  const existing = isPixelate ? committedPixelateMask.value : committedBlurMask.value
+  const canvas = await loadMaskCanvasFromDataUrl(
+    existing,
+    el.naturalWidth,
+    el.naturalHeight
+  )
+  if (!canvas) {
+    return false
+  }
+  stampRectOnMaskCanvas(canvas, naturalRect)
+  const dataUrl = exportBrushMaskCanvas(canvas)
+  if (!dataUrl) {
+    return false
+  }
+  if (isPixelate) {
+    committedPixelateMaskCanvasCache = canvas
+    committedPixelateMask.value = dataUrl
+    committedPixelateRegion.value = null
+  } else {
+    committedBlurMaskCanvasCache = canvas
+    committedBlurMask.value = dataUrl
+    committedBlurRegion.value = null
+  }
+  return true
+}
+
+const bakeStoredOverlayRegionIntoMask = async (overlayId, kind) => {
+  if (!isCollageComposition.value || !overlayId) {
+    return false
+  }
+  const ov = imageOverlays.value.find((item) => item.id === overlayId)
+  const region =
+    kind === 'pixelate' ? ov?.effects?.pixelate_region : ov?.effects?.blur_region
+  if (!ov || !region) {
+    return false
+  }
+  const existing =
+    kind === 'pixelate' ? ov.effects?.pixelate_mask : ov.effects?.blur_mask
+  const canvas = await loadMaskCanvasFromDataUrl(existing, ov.width, ov.height)
+  if (!canvas) {
+    return false
+  }
+  stampRectOnMaskCanvas(canvas, region)
+  const dataUrl = exportBrushMaskCanvas(canvas)
+  if (!dataUrl) {
+    return false
+  }
+  if (kind === 'pixelate') {
+    committedPixelateMask.value = dataUrl
+    committedPixelateRegion.value = null
+    writeOverlayEffectPatch(ov.id, {
+      pixelate: Number(ov.effects?.pixelate) || pixelate.value || DEFAULT_PIXELATE_BLOCK,
+      pixelate_mask: dataUrl,
+      pixelate_region: undefined
+    })
+  } else {
+    committedBlurMask.value = dataUrl
+    committedBlurRegion.value = null
+    writeOverlayEffectPatch(ov.id, {
+      blur: Number(ov.effects?.blur) || blur.value || DEFAULT_BLUR_STRENGTH,
+      blur_mask: dataUrl,
+      blur_region: undefined
+    })
+  }
+  return true
+}
+
+const commitLiveRectangleIntoAccumulatedMask = async (kind) => {
+  const rect = currentEffectNaturalRect(kind)
+  if (!rect) {
+    return false
+  }
+  return stampNaturalRectIntoEffectMask(kind, rect)
+}
+
 const exportPixelateMaskDataUrl = () => {
   if (!pixelateBrushCanvas || !pixelateMaskDirty.value) {
     return null
@@ -4435,9 +4647,9 @@ const handleBlurPan = (e) => {
   const { x, y } = clientToImgLocal(e)
   let nx = x - blurPanGrab.value.x
   let ny = y - blurPanGrab.value.y
-  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
-  nx = Math.max(ox, Math.min(ox + drawnW - blurSize.value.width, nx))
-  ny = Math.max(oy, Math.min(oy + drawnH - blurSize.value.height, ny))
+  const b = effectRegionDisplayBounds()
+  nx = Math.max(b.minX, Math.min(b.maxX - blurSize.value.width, nx))
+  ny = Math.max(b.minY, Math.min(b.maxY - blurSize.value.height, ny))
   blurStart.value = { x: nx, y: ny }
   if (!blurPanPreviewRaf) {
     blurPanPreviewRaf = requestAnimationFrame(() => {
@@ -4482,9 +4694,9 @@ const handlePixelatePan = (e) => {
   const { x, y } = clientToImgLocal(e)
   let nx = x - pixelatePanGrab.value.x
   let ny = y - pixelatePanGrab.value.y
-  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
-  nx = Math.max(ox, Math.min(ox + drawnW - pixelateSize.value.width, nx))
-  ny = Math.max(oy, Math.min(oy + drawnH - pixelateSize.value.height, ny))
+  const b = effectRegionDisplayBounds()
+  nx = Math.max(b.minX, Math.min(b.maxX - pixelateSize.value.width, nx))
+  ny = Math.max(b.minY, Math.min(b.maxY - pixelateSize.value.height, ny))
   pixelateStart.value = { x: nx, y: ny }
   if (!pixelatePanPreviewRaf) {
     pixelatePanPreviewRaf = requestAnimationFrame(() => {
@@ -4494,7 +4706,150 @@ const handlePixelatePan = (e) => {
   }
 }
 
+const effectRegionDisplayBounds = () => {
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    const ov = imageOverlays.value.find((overlay) => overlay.id === selectedOverlayId.value)
+    if (ov) {
+      const d = naturalRectToDisplay(ov.x, ov.y, ov.width, ov.height)
+      if (d.width >= 1 && d.height >= 1) {
+        return {
+          minX: d.left,
+          minY: d.top,
+          maxX: d.left + d.width,
+          maxY: d.top + d.height
+        }
+      }
+    }
+  }
+  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
+  return { minX: ox, minY: oy, maxX: ox + drawnW, maxY: oy + drawnH }
+}
+
+const cancelEffectRectDrawPreviewRaf = () => {
+  if (effectRectDrawPreviewRaf) {
+    cancelAnimationFrame(effectRectDrawPreviewRaf)
+    effectRectDrawPreviewRaf = 0
+  }
+}
+
+const applyEffectRectDrawBox = (x0, y0, x1, y1, startRef, sizeRef) => {
+  const b = effectRegionDisplayBounds()
+  const ax = Math.max(b.minX, Math.min(b.maxX, x0))
+  const ay = Math.max(b.minY, Math.min(b.maxY, y0))
+  const bx = Math.max(b.minX, Math.min(b.maxX, x1))
+  const by = Math.max(b.minY, Math.min(b.maxY, y1))
+  startRef.value = { x: Math.min(ax, bx), y: Math.min(ay, by) }
+  sizeRef.value = {
+    width: Math.max(1, Math.abs(bx - ax)),
+    height: Math.max(1, Math.abs(by - ay))
+  }
+}
+
+const stopEffectRectDraw = (commit = false) => {
+  cancelEffectRectDrawPreviewRaf()
+  const draw = effectRectDraw.value
+  if (!draw) {
+    return
+  }
+  effectRectDraw.value = null
+  document.removeEventListener('mousemove', handleEffectRectDraw)
+  document.removeEventListener('mouseup', finishEffectRectDraw)
+  document.removeEventListener('touchmove', handleEffectRectDraw)
+  document.removeEventListener('touchend', finishEffectRectDraw)
+  if (!commit) {
+    return
+  }
+  if (draw.kind === 'blur') {
+    ensureBlurEffectStrength()
+  } else {
+    ensurePixelateEffectStrength()
+  }
+  applyChanges()
+}
+
+const finishEffectRectDraw = () => {
+  stopEffectRectDraw(true)
+}
+
+const handleEffectRectDraw = (e) => {
+  const draw = effectRectDraw.value
+  if (!draw) {
+    return
+  }
+  if (e.type === 'touchmove' && e.cancelable) {
+    e.preventDefault()
+  }
+  const { x, y } = clientToImgLocal(e)
+  const startRef = draw.kind === 'blur' ? blurStart : pixelateStart
+  const sizeRef = draw.kind === 'blur' ? blurSize : pixelateSize
+  applyEffectRectDrawBox(draw.x0, draw.y0, x, y, startRef, sizeRef)
+  if (!effectRectDrawPreviewRaf) {
+    effectRectDrawPreviewRaf = requestAnimationFrame(() => {
+      effectRectDrawPreviewRaf = 0
+      scheduleApplyChanges()
+    })
+  }
+}
+
+const overlayAtDisplayPoint = (x, y) => {
+  if (!isCollageComposition.value || !imageOverlays.value.length) {
+    return null
+  }
+  const n = displayPointToNatural(x, y)
+  const sorted = [...imageOverlays.value].sort(
+    (a, b) => layerStackZIndex('overlay', b.id) - layerStackZIndex('overlay', a.id)
+  )
+  return (
+    sorted.find(
+      (ov) =>
+        n.x >= ov.x &&
+        n.x <= ov.x + ov.width &&
+        n.y >= ov.y &&
+        n.y <= ov.y + ov.height
+    ) || null
+  )
+}
+
+const startEffectRectDraw = async (kind, e) => {
+  if (resizeDirection.value || isDraggingBlurPan.value || isDraggingPixelatePan.value) {
+    return
+  }
+  stopEffectRectDraw(false)
+  stopBlurPan()
+  stopPixelatePan()
+  const { x, y } = clientToImgLocal(e)
+  const hit = overlayAtDisplayPoint(x, y)
+  const switching = Boolean(hit && hit.id !== selectedOverlayId.value)
+
+  await commitLiveRectangleIntoAccumulatedMask(kind)
+  const startRef = kind === 'blur' ? blurStart : pixelateStart
+  const sizeRef = kind === 'blur' ? blurSize : pixelateSize
+  startRef.value = { x: 0, y: 0 }
+  sizeRef.value = { width: 0, height: 0 }
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    persistLiveEffectsToOverlay(selectedOverlayId.value)
+  }
+
+  effectRectDraw.value = { kind, x0: x, y0: y }
+  if (switching) {
+    selectedOverlayId.value = hit.id
+    await bakeStoredOverlayRegionIntoMask(hit.id, kind)
+  }
+
+  const b = effectRegionDisplayBounds()
+  const x0 = Math.max(b.minX, Math.min(b.maxX, x))
+  const y0 = Math.max(b.minY, Math.min(b.maxY, y))
+  effectRectDraw.value = { kind, x0, y0 }
+  startRef.value = { x: x0, y: y0 }
+  sizeRef.value = { width: 1, height: 1 }
+  document.addEventListener('mousemove', handleEffectRectDraw)
+  document.addEventListener('mouseup', finishEffectRectDraw)
+  document.addEventListener('touchmove', handleEffectRectDraw, { passive: false })
+  document.addEventListener('touchend', finishEffectRectDraw)
+}
+
 const startResize = (kind, direction) => {
+  stopEffectRectDraw(false)
   stopBlurPan()
   stopPixelatePan()
   stopCropPan()
@@ -4522,11 +4877,11 @@ const handleResize = (e) => {
   const boxStart = resizeKind.value === 'blur' ? blurStart : pixelateStart
   const boxSize = resizeKind.value === 'blur' ? blurSize : pixelateSize
 
-  const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
-  const minX = ox
-  const minY = oy
-  const maxX = ox + drawnW
-  const maxY = oy + drawnH
+  const b = effectRegionDisplayBounds()
+  const minX = b.minX
+  const minY = b.minY
+  const maxX = b.maxX
+  const maxY = b.maxY
   const px = Math.max(minX, Math.min(maxX, sx))
   const py = Math.max(minY, Math.min(maxY, sy))
 
@@ -4963,7 +5318,7 @@ const flipMaskCanvasVertical = (canvas) => {
   replaceCanvasBitmap(canvas, tmp)
 }
 
-const transformOverlayDataUrl = (src, { rotate90Ccw = false, flipH = false, flipV = false }) =>
+const transformOverlayDataUrl = (src, { rotate90Ccw = false, rotate90Cw = false, flipH = false, flipV = false }) =>
   new Promise((resolve, reject) => {
     const img = new window.Image()
     img.onload = () => {
@@ -4973,7 +5328,7 @@ const transformOverlayDataUrl = (src, { rotate90Ccw = false, flipH = false, flip
         resolve(src)
         return
       }
-      if (rotate90Ccw) {
+      if (rotate90Ccw || rotate90Cw) {
         ;[dw, dh] = [dh, dw]
       }
       const c = document.createElement('canvas')
@@ -4988,6 +5343,9 @@ const transformOverlayDataUrl = (src, { rotate90Ccw = false, flipH = false, flip
       if (rotate90Ccw) {
         ctx.translate(0, dh)
         ctx.rotate(-Math.PI / 2)
+      } else if (rotate90Cw) {
+        ctx.translate(dw, 0)
+        ctx.rotate(Math.PI / 2)
       } else if (flipH || flipV) {
         let tx = 0
         let ty = 0
@@ -5215,6 +5573,7 @@ const transformCollageCanvasContentRotate90Ccw = async () => {
           width: next.width,
           height: next.height,
           src: await transformOverlayDataUrl(ov.src, { rotate90Ccw: true }),
+          effects: await transformStoredOverlayEffects(ov.effects, ov, { rotate90Ccw: true }),
           captionAngle: ((Number(ov.captionAngle) || 0) + 90) % 360
         }
       })
@@ -5242,6 +5601,7 @@ const transformCollageCanvasContentFlipHorizontal = async () => {
           x: next.x,
           y: next.y,
           src: await transformOverlayDataUrl(ov.src, { flipH: true }),
+          effects: await transformStoredOverlayEffects(ov.effects, ov, { flipH: true }),
           captionAngle: (360 - (Number(ov.captionAngle) || 0)) % 360
         }
       })
@@ -5267,6 +5627,7 @@ const transformCollageCanvasContentFlipVertical = async () => {
           x: next.x,
           y: next.y,
           src: await transformOverlayDataUrl(ov.src, { flipV: true }),
+          effects: await transformStoredOverlayEffects(ov.effects, ov, { flipV: true }),
           captionAngle: (180 - (Number(ov.captionAngle) || 0) + 360) % 360
         }
       })
@@ -5394,6 +5755,24 @@ const commitPendingEffectEdits = () => {
 
 const closeEffectOption = (kind) => {
   commitPendingEffectEdits()
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    persistLiveEffectsToOverlay(selectedOverlayId.value)
+    if (kind === 'blur') {
+      blur.value = 0
+      committedBlurRegion.value = null
+      committedBlurMask.value = null
+      blurApplyGlobal.value = false
+      clearBlurBrushMask()
+      showBlurRegion.value = false
+    } else {
+      pixelate.value = 0
+      committedPixelateRegion.value = null
+      committedPixelateMask.value = null
+      pixelateApplyGlobal.value = false
+      clearPixelateBrushMask()
+      showPixelateRegion.value = false
+    }
+  }
   if (kind === 'blur') {
     showBlurMenu.value = false
     if (activeControl.value === 'blur') {
@@ -5487,8 +5866,217 @@ const toggleFlip = async (direction) => {
   })
 }
 
+const rotateOverlayLocalRect90Cw = (rect, overlayH) => {
+  if (!rect) {
+    return null
+  }
+  return {
+    x: overlayH - rect.y - rect.height,
+    y: rect.x,
+    width: rect.height,
+    height: rect.width
+  }
+}
+
+const rotateOverlayLocalRect90Ccw = (rect, overlayW) => {
+  if (!rect) {
+    return null
+  }
+  return {
+    x: rect.y,
+    y: overlayW - rect.x - rect.width,
+    width: rect.height,
+    height: rect.width
+  }
+}
+
+const flipOverlayLocalRectHorizontal = (rect, overlayW) => {
+  if (!rect) {
+    return null
+  }
+  return {
+    ...rect,
+    x: overlayW - rect.x - rect.width
+  }
+}
+
+const flipOverlayLocalRectVertical = (rect, overlayH) => {
+  if (!rect) {
+    return null
+  }
+  return {
+    ...rect,
+    y: overlayH - rect.y - rect.height
+  }
+}
+
+const rotateOverlayLocalMask90 = (maskSrc, overlayW, overlayH, clockwise) =>
+  new Promise((resolve) => {
+    if (!maskSrc) {
+      resolve(null)
+      return
+    }
+    const img = new window.Image()
+    img.onload = () => {
+      const c = document.createElement('canvas')
+      c.width = overlayH
+      c.height = overlayW
+      const ctx = c.getContext('2d')
+      if (!ctx) {
+        resolve(maskSrc)
+        return
+      }
+      if (clockwise) {
+        ctx.translate(c.width, 0)
+        ctx.rotate(Math.PI / 2)
+      } else {
+        ctx.translate(0, c.height)
+        ctx.rotate(-Math.PI / 2)
+      }
+      ctx.drawImage(img, 0, 0, overlayW, overlayH)
+      resolve(c.toDataURL('image/png'))
+    }
+    img.onerror = () => resolve(maskSrc)
+    img.src = maskSrc
+  })
+
+const rotateOverlayLocalMask90Cw = (maskSrc, overlayW, overlayH) =>
+  rotateOverlayLocalMask90(maskSrc, overlayW, overlayH, true)
+
+const rotateOverlayLocalMask90Ccw = (maskSrc, overlayW, overlayH) =>
+  rotateOverlayLocalMask90(maskSrc, overlayW, overlayH, false)
+
+const transformStoredOverlayEffects = async (effects, ov, transform) => {
+  if (!effects) {
+    return null
+  }
+  const next = { ...effects }
+  const w = ov.width
+  const h = ov.height
+  if (transform.rotate90Cw) {
+    if (next.blur_region) {
+      next.blur_region = rotateOverlayLocalRect90Cw(next.blur_region, h)
+    }
+    if (next.pixelate_region) {
+      next.pixelate_region = rotateOverlayLocalRect90Cw(next.pixelate_region, h)
+    }
+    if (next.blur_mask) {
+      next.blur_mask = await rotateOverlayLocalMask90Cw(next.blur_mask, w, h)
+    }
+    if (next.pixelate_mask) {
+      next.pixelate_mask = await rotateOverlayLocalMask90Cw(next.pixelate_mask, w, h)
+    }
+  } else if (transform.rotate90Ccw) {
+    if (next.blur_region) {
+      next.blur_region = rotateOverlayLocalRect90Ccw(next.blur_region, w)
+    }
+    if (next.pixelate_region) {
+      next.pixelate_region = rotateOverlayLocalRect90Ccw(next.pixelate_region, w)
+    }
+    if (next.blur_mask) {
+      next.blur_mask = await rotateOverlayLocalMask90Ccw(next.blur_mask, w, h)
+    }
+    if (next.pixelate_mask) {
+      next.pixelate_mask = await rotateOverlayLocalMask90Ccw(next.pixelate_mask, w, h)
+    }
+  } else if (transform.flipH) {
+    if (next.blur_region) {
+      next.blur_region = flipOverlayLocalRectHorizontal(next.blur_region, w)
+    }
+    if (next.pixelate_region) {
+      next.pixelate_region = flipOverlayLocalRectHorizontal(next.pixelate_region, w)
+    }
+  } else if (transform.flipV) {
+    if (next.blur_region) {
+      next.blur_region = flipOverlayLocalRectVertical(next.blur_region, h)
+    }
+    if (next.pixelate_region) {
+      next.pixelate_region = flipOverlayLocalRectVertical(next.pixelate_region, h)
+    }
+  }
+  return next
+}
+
+const syncLiveCommittedRegionsFromOverlay = (ov) => {
+  const effects = ov?.effects
+  if (!effects) {
+    return
+  }
+  if (effects.blur_region) {
+    committedBlurRegion.value = overlayLocalRectToCanvas(effects.blur_region, ov)
+  }
+  if (effects.pixelate_region) {
+    committedPixelateRegion.value = overlayLocalRectToCanvas(effects.pixelate_region, ov)
+  }
+  if (effects.blur_mask) {
+    committedBlurMask.value = effects.blur_mask
+  }
+  if (effects.pixelate_mask) {
+    committedPixelateMask.value = effects.pixelate_mask
+  }
+}
+
+const syncEffectRectDisplayFromCommitted = () => {
+  if (
+    showPixelateRegion.value &&
+    pixelateShapeMode.value === 'rectangle' &&
+    committedPixelateRegion.value
+  ) {
+    const disp = committedRegionToDisplayRect(committedPixelateRegion.value)
+    if (disp) {
+      pixelateStart.value = { x: disp.x, y: disp.y }
+      pixelateSize.value = { width: disp.width, height: disp.height }
+    }
+  }
+  if (showBlurRegion.value && blurShapeMode.value === 'rectangle' && committedBlurRegion.value) {
+    const disp = committedRegionToDisplayRect(committedBlurRegion.value)
+    if (disp) {
+      blurStart.value = { x: disp.x, y: disp.y }
+      blurSize.value = { width: disp.width, height: disp.height }
+    }
+  }
+}
+
+const rotateSelectedCollageOverlay = async () => {
+  const id = selectedOverlayId.value
+  persistLiveEffectsToOverlay(id)
+  const idx = imageOverlays.value.findIndex((ov) => ov.id === id)
+  if (idx < 0) {
+    return false
+  }
+  const ov = imageOverlays.value[idx]
+  const cx = ov.x + ov.width / 2
+  const cy = ov.y + ov.height / 2
+  const nextW = ov.height
+  const nextH = ov.width
+  const nx = Math.round(cx - nextW / 2)
+  const ny = Math.round(cy - nextH / 2)
+  const effects = await transformStoredOverlayEffects(ov.effects, ov, { rotate90Cw: true })
+  const src = await transformOverlayDataUrl(ov.src, { rotate90Cw: true })
+  const updated = [...imageOverlays.value]
+  updated[idx] = {
+    ...ov,
+    src,
+    x: nx,
+    y: ny,
+    width: nextW,
+    height: nextH,
+    effects,
+    captionAngle: ((Number(ov.captionAngle) || 0) + 90) % 360
+  }
+  imageOverlays.value = updated
+  syncLiveCommittedRegionsFromOverlay(updated[idx])
+  syncEffectRectDisplayFromCommitted()
+  return true
+}
+
 const rotateImage = async () => {
   closeDrawingMenu()
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    await rotateSelectedCollageOverlay()
+    await applyChanges()
+    return
+  }
   commitPendingEffectEdits()
   await runWithGeometryAnimation('rotate(-90deg)', async ({ animated }) => {
     if (shouldTransformCanvasContentOnGeometryEdit()) {
@@ -6188,6 +6776,24 @@ const committedRegionToDisplayRect = (natural) => {
 }
 
 const initDefaultEffectRectangle = (startRef, sizeRef) => {
+  const selected =
+    isCollageComposition.value && selectedOverlayId.value
+      ? imageOverlays.value.find((ov) => ov.id === selectedOverlayId.value)
+      : null
+  if (selected) {
+    const d = naturalRectToDisplay(selected.x, selected.y, selected.width, selected.height)
+    const frac = 0.55
+    const maxBw = Math.max(24, d.width - 4)
+    const maxBh = Math.max(24, d.height - 4)
+    const bw = Math.min(Math.max(24, Math.floor(d.width * frac)), maxBw)
+    const bh = Math.min(Math.max(24, Math.floor(d.height * frac)), maxBh)
+    startRef.value = {
+      x: d.left + (d.width - bw) / 2,
+      y: d.top + (d.height - bh) / 2
+    }
+    sizeRef.value = { width: bw, height: bh }
+    return
+  }
   const { ox, oy, drawnW, drawnH } = getImageOnScreenBounds()
   const frac = 0.34
   const maxBw = Math.max(32, drawnW - 6)
@@ -6228,6 +6834,7 @@ const capturePixelateRegionFromDisplay = () => {
 }
 
 const exitBlurRectangleUi = () => {
+  stopEffectRectDraw(false)
   stopBlurPan()
   showBlurRegion.value = false
   blurShapeMode.value = 'rectangle'
@@ -6236,6 +6843,7 @@ const exitBlurRectangleUi = () => {
 }
 
 const exitPixelateRectangleUi = () => {
+  stopEffectRectDraw(false)
   stopPixelatePan()
   showPixelateRegion.value = false
   pixelateShapeMode.value = 'rectangle'
@@ -6249,17 +6857,33 @@ const openBlurRectangleEditor = () => {
   stopCropPan()
   showCrop.value = false
   prepareSwitchFromPixelateTool()
-  committedBlurMask.value = null
   blurShapeMode.value = 'rectangle'
   blurApplyGlobal.value = false
   showBlurRegion.value = true
   activeControl.value = 'blur'
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    const ov = imageOverlays.value.find((item) => item.id === selectedOverlayId.value)
+    if (ov?.effects) {
+      if ((Number(ov.effects.blur) || 0) > 0 && blur.value <= 0) {
+        blur.value = Number(ov.effects.blur)
+      }
+      if (ov.effects.blur_mask) {
+        committedBlurMask.value = ov.effects.blur_mask
+      }
+      if (ov.effects.blur_region && !committedBlurRegion.value) {
+        committedBlurRegion.value = overlayLocalRectToCanvas(ov.effects.blur_region, ov)
+      }
+    }
+  }
   const disp = committedBlurRegion.value
     ? committedRegionToDisplayRect(committedBlurRegion.value)
     : null
   if (disp) {
     blurStart.value = { x: disp.x, y: disp.y }
     blurSize.value = { width: disp.width, height: disp.height }
+  } else if (isCollageComposition.value) {
+    blurStart.value = { x: 0, y: 0 }
+    blurSize.value = { width: 0, height: 0 }
   } else if (imageRef.value) {
     initDefaultEffectRectangle(blurStart, blurSize)
   }
@@ -6271,17 +6895,33 @@ const openPixelateRectangleEditor = () => {
   stopCropPan()
   showCrop.value = false
   prepareSwitchFromBlurTool()
-  committedPixelateMask.value = null
   pixelateShapeMode.value = 'rectangle'
   pixelateApplyGlobal.value = false
   showPixelateRegion.value = true
   activeControl.value = 'pixelate'
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    const ov = imageOverlays.value.find((item) => item.id === selectedOverlayId.value)
+    if (ov?.effects) {
+      if ((Number(ov.effects.pixelate) || 0) > 0 && pixelate.value <= 0) {
+        pixelate.value = Number(ov.effects.pixelate)
+      }
+      if (ov.effects.pixelate_mask) {
+        committedPixelateMask.value = ov.effects.pixelate_mask
+      }
+      if (ov.effects.pixelate_region && !committedPixelateRegion.value) {
+        committedPixelateRegion.value = overlayLocalRectToCanvas(ov.effects.pixelate_region, ov)
+      }
+    }
+  }
   const disp = committedPixelateRegion.value
     ? committedRegionToDisplayRect(committedPixelateRegion.value)
     : null
   if (disp) {
     pixelateStart.value = { x: disp.x, y: disp.y }
     pixelateSize.value = { width: disp.width, height: disp.height }
+  } else if (isCollageComposition.value) {
+    pixelateStart.value = { x: 0, y: 0 }
+    pixelateSize.value = { width: 0, height: 0 }
   } else if (imageRef.value) {
     initDefaultEffectRectangle(pixelateStart, pixelateSize)
   }
@@ -6343,11 +6983,21 @@ const resolveActiveBlurLevel = () =>
 const resolveActivePixelateLevel = () =>
   pixelate.value > 0 && hasActivePixelateTarget() ? pixelate.value : 0
 
+const overlayHasStoredEffects = (ov) => {
+  const effects = ov?.effects
+  if (!effects) {
+    return false
+  }
+  return (Number(effects.blur) || 0) > 0 || (Number(effects.pixelate) || 0) > 0
+}
+
 /** Efeito local activo na folha em branco (inclui máscara/zona já confirmada). */
 const collageHasLocalEffects = computed(
   () =>
     isCollageComposition.value &&
-    (resolveActiveBlurLevel() > 0 || resolveActivePixelateLevel() > 0)
+    (resolveActiveBlurLevel() > 0 ||
+      resolveActivePixelateLevel() > 0 ||
+      imageOverlays.value.some((ov) => overlayHasStoredEffects(ov)))
 )
 
 /** Brilho, contraste, filtros, etc. — também devem compor sobre as imagens coladas. */
@@ -8012,6 +8662,205 @@ const buildCaptionSettingsPayload = () => ({
   band_border_width: captionBandBorderWidthNatural()
 })
 
+const canvasRectToOverlayLocal = (rect, ov) => {
+  if (!rect || !ov) {
+    return null
+  }
+  const x = Math.round(rect.x - ov.x)
+  const y = Math.round(rect.y - ov.y)
+  const cx = Math.max(0, x)
+  const cy = Math.max(0, y)
+  const width = Math.round(rect.width) - (cx - x)
+  const height = Math.round(rect.height) - (cy - y)
+  const cw = Math.min(Math.max(1, Math.round(ov.width) - cx), width)
+  const ch = Math.min(Math.max(1, Math.round(ov.height) - cy), height)
+  if (cw < 1 || ch < 1) {
+    return null
+  }
+  return { x: cx, y: cy, width: cw, height: ch }
+}
+
+const overlayLocalRectToCanvas = (rect, ov) => {
+  if (!rect || !ov) {
+    return null
+  }
+  return {
+    x: Math.round(ov.x + rect.x),
+    y: Math.round(ov.y + rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  }
+}
+
+const cropCanvasToOverlayDataUrl = (sourceCanvas, ov) => {
+  if (!sourceCanvas || !ov) {
+    return null
+  }
+  const w = Math.max(1, Math.round(ov.width))
+  const h = Math.max(1, Math.round(ov.height))
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')
+  if (!ctx) {
+    return null
+  }
+  ctx.drawImage(sourceCanvas, ov.x, ov.y, ov.width, ov.height, 0, 0, w, h)
+  return c.toDataURL('image/png')
+}
+
+const liveEffectsAsOverlayLocal = (ov) => {
+  const effects = { ...(ov.effects || {}) }
+  const blurLevel = resolveActiveBlurLevel()
+  if (blurLevel > 0) {
+    effects.blur = blurLevel
+    const blurIsBrush = Boolean(
+      (showBlurRegion.value && blurShapeMode.value === 'brush') ||
+        (committedBlurMask.value && blurShapeMode.value === 'brush')
+    )
+    effects.blur_brush = blurIsBrush
+    if (blurApplyGlobal.value) {
+      delete effects.blur_region
+      delete effects.blur_mask
+    } else if (blurIsBrush && (blurBrushCanvas || committedBlurMaskCanvasCache)) {
+      const source =
+        showBlurRegion.value && blurShapeMode.value === 'brush' && blurBrushCanvas
+          ? blurBrushCanvas
+          : committedBlurMaskCanvasCache
+      const cropped = cropCanvasToOverlayDataUrl(source, ov)
+      if (cropped) {
+        effects.blur_mask = cropped
+      }
+      delete effects.blur_region
+    } else {
+      const local = canvasRectToOverlayLocal(resolveBlurRegionPayload(), ov)
+      if (local) {
+        effects.blur_region = local
+      } else {
+        delete effects.blur_region
+      }
+      const overlayMask =
+        ov.id === selectedOverlayId.value && committedBlurMask.value
+          ? committedBlurMask.value
+          : effects.blur_mask
+      if (overlayMask) {
+        effects.blur_mask = overlayMask
+      }
+    }
+  }
+
+  const pixelateLevel = resolveActivePixelateLevel()
+  if (pixelateLevel > 0) {
+    effects.pixelate = pixelateLevel
+    const pixelateIsBrush = Boolean(
+      (showPixelateRegion.value && pixelateShapeMode.value === 'brush') ||
+        (committedPixelateMask.value && pixelateShapeMode.value === 'brush')
+    )
+    effects.pixelate_brush = pixelateIsBrush
+    if (pixelateApplyGlobal.value) {
+      delete effects.pixelate_region
+      delete effects.pixelate_mask
+    } else if (pixelateIsBrush && (pixelateBrushCanvas || committedPixelateMaskCanvasCache)) {
+      const source =
+        showPixelateRegion.value && pixelateShapeMode.value === 'brush' && pixelateBrushCanvas
+          ? pixelateBrushCanvas
+          : committedPixelateMaskCanvasCache
+      const cropped = cropCanvasToOverlayDataUrl(source, ov)
+      if (cropped) {
+        effects.pixelate_mask = cropped
+      }
+      delete effects.pixelate_region
+    } else {
+      const local = canvasRectToOverlayLocal(resolvePixelateRegionPayload(), ov)
+      if (local) {
+        effects.pixelate_region = local
+      } else {
+        delete effects.pixelate_region
+      }
+      const overlayMask =
+        ov.id === selectedOverlayId.value && committedPixelateMask.value
+          ? committedPixelateMask.value
+          : effects.pixelate_mask
+      if (overlayMask) {
+        effects.pixelate_mask = overlayMask
+      }
+    }
+  }
+
+  return Object.keys(effects).length > 0 ? effects : null
+}
+
+const persistLiveEffectsToOverlay = (overlayId) => {
+  if (!isCollageComposition.value || !overlayId) {
+    return
+  }
+  const idx = imageOverlays.value.findIndex((ov) => ov.id === overlayId)
+  if (idx < 0) {
+    return
+  }
+  const ov = imageOverlays.value[idx]
+  const hasBlur = resolveActiveBlurLevel() > 0
+  const hasPixelate = resolveActivePixelateLevel() > 0
+  if (!hasBlur && !hasPixelate) {
+    return
+  }
+  const effects = liveEffectsAsOverlayLocal(ov) || { ...(ov.effects || {}) }
+  const updated = [...imageOverlays.value]
+  updated[idx] = {
+    ...ov,
+    effects: Object.keys(effects).length > 0 ? effects : null
+  }
+  imageOverlays.value = updated
+}
+
+const clearLiveEffectState = () => {
+  showBlurRegion.value = false
+  blurShapeMode.value = 'rectangle'
+  committedBlurRegion.value = null
+  committedBlurMask.value = null
+  blurApplyGlobal.value = false
+  clearBlurBrushMask()
+  showPixelateRegion.value = false
+  pixelateShapeMode.value = 'rectangle'
+  committedPixelateRegion.value = null
+  committedPixelateMask.value = null
+  pixelateApplyGlobal.value = false
+  clearPixelateBrushMask()
+}
+
+const loadOverlayEffectsIntoLive = (overlayId) => {
+  clearLiveEffectState()
+  const ov = imageOverlays.value.find((item) => item.id === overlayId)
+  const effects = ov?.effects
+  if (!effects) {
+    return
+  }
+  if ((Number(effects.blur) || 0) > 0) {
+    blur.value = Number(effects.blur)
+    blurApplyGlobal.value = Boolean(
+      !effects.blur_region && !effects.blur_mask && !effects.blur_brush
+    )
+    if (effects.blur_region) {
+      committedBlurRegion.value = overlayLocalRectToCanvas(effects.blur_region, ov)
+    }
+    if (effects.blur_mask) {
+      committedBlurMask.value = effects.blur_mask
+    }
+  }
+  if ((Number(effects.pixelate) || 0) > 0) {
+    pixelate.value = Number(effects.pixelate)
+    pixelateApplyGlobal.value = Boolean(
+      !effects.pixelate_region && !effects.pixelate_mask && !effects.pixelate_brush
+    )
+    if (effects.pixelate_region) {
+      committedPixelateRegion.value = overlayLocalRectToCanvas(effects.pixelate_region, ov)
+    }
+    if (effects.pixelate_mask) {
+      committedPixelateMask.value = effects.pixelate_mask
+    }
+  }
+}
+
 const mapImageOverlaysPayload = () =>
   imageOverlays.value.map((ov) => {
     const { src, x, y, width, height, caption } = ov
@@ -8021,6 +8870,38 @@ const mapImageOverlaysPayload = () =>
       y: Math.round(y),
       width: Math.round(width),
       height: Math.round(height)
+    }
+    const effects =
+      isCollageComposition.value &&
+      ov.id === selectedOverlayId.value &&
+      (resolveActiveBlurLevel() > 0 || resolveActivePixelateLevel() > 0)
+        ? liveEffectsAsOverlayLocal(ov)
+        : ov.effects
+    if (effects) {
+      if ((Number(effects.blur) || 0) > 0) {
+        item.blur = Number(effects.blur)
+        if (effects.blur_brush) {
+          item.blur_brush = true
+        }
+        if (effects.blur_mask) {
+          item.blur_mask = effects.blur_mask
+        }
+        if (effects.blur_region) {
+          item.blur_region = effects.blur_region
+        }
+      }
+      if ((Number(effects.pixelate) || 0) > 0) {
+        item.pixelate = Number(effects.pixelate)
+        if (effects.pixelate_brush) {
+          item.pixelate_brush = true
+        }
+        if (effects.pixelate_mask) {
+          item.pixelate_mask = effects.pixelate_mask
+        }
+        if (effects.pixelate_region) {
+          item.pixelate_region = effects.pixelate_region
+        }
+      }
     }
     if (caption) {
       item.caption = {
@@ -8406,9 +9287,11 @@ const onOverlayWindowMove = (e) => {
 
 const startOverlayMove = (e, id) => {
   if (drawingTool.value || showCrop.value || showBlurRegion.value || showPixelateRegion.value) {
+    e.preventDefault()
     return
   }
   if (!canMoveImageOverlays.value) {
+    e.preventDefault()
     return
   }
   stopOverlayMove()
@@ -9097,7 +9980,6 @@ const selectBlurRectangle = () => {
   blurShapeMode.value = 'rectangle'
   blurApplyGlobal.value = false
   clearBlurBrushMask()
-  committedBlurMask.value = null
   showBlurMenu.value = false
   if (!showBlurRegion.value) {
     openBlurRectangleEditor()
@@ -9158,7 +10040,6 @@ const selectPixelateRectangle = () => {
   pixelateShapeMode.value = 'rectangle'
   pixelateApplyGlobal.value = false
   clearPixelateBrushMask()
-  committedPixelateMask.value = null
   showPixelateMenu.value = false
   if (!showPixelateRegion.value) {
     openPixelateRectangleEditor()
@@ -9544,6 +10425,8 @@ const buildEditPayload = (options = {}) => {
         ? null
         : getCropNaturalPayload()
 
+  const collageEffectsOnOverlays = isCollageComposition.value
+
   const payload = {
     user_id: props.userId,
     image_url: props.photo.filename,
@@ -9553,24 +10436,26 @@ const buildEditPayload = (options = {}) => {
     filter_preset: activeFilterPreset.value || null,
     gamma: gamma.value,
     gamma_fine: gammaFine.value,
-    blur: resolveActiveBlurLevel(),
+    blur: collageEffectsOnOverlays ? 0 : resolveActiveBlurLevel(),
     blur_brush:
+      !collageEffectsOnOverlays &&
       resolveActiveBlurLevel() > 0 &&
       Boolean(
         (showBlurRegion.value && blurShapeMode.value === 'brush') ||
           committedBlurMask.value
       ),
-    blur_mask: resolveBlurMaskPayload(),
-    blur_region: resolveBlurRegionPayload(),
-    pixelate: resolveActivePixelateLevel(),
+    blur_mask: collageEffectsOnOverlays ? null : resolveBlurMaskPayload(),
+    blur_region: collageEffectsOnOverlays ? null : resolveBlurRegionPayload(),
+    pixelate: collageEffectsOnOverlays ? 0 : resolveActivePixelateLevel(),
     pixelate_brush:
+      !collageEffectsOnOverlays &&
       resolveActivePixelateLevel() > 0 &&
       Boolean(
         (showPixelateRegion.value && pixelateShapeMode.value === 'brush') ||
           committedPixelateMask.value
       ),
-    pixelate_mask: resolvePixelateMaskPayload(),
-    pixelate_region: resolvePixelateRegionPayload(),
+    pixelate_mask: collageEffectsOnOverlays ? null : resolvePixelateMaskPayload(),
+    pixelate_region: collageEffectsOnOverlays ? null : resolvePixelateRegionPayload(),
     sharpen: sharpen.value,
     flip_horizontal: flipHorizontal.value,
     flip_vertical: flipVertical.value,
@@ -9624,7 +10509,7 @@ const applyChanges = async (options = {}) => {
       const newUrl = response.data.image_data
       if (options.commitGeometryPreview) {
         await finalizeGeometryPreviewUrl(newUrl)
-      } else if (!blankCanvasUsesDomOverlays.value) {
+      } else if (!blankCanvasUsesDomOverlays.value || shouldHideDomImageOverlays.value) {
         currentImageUrl.value = newUrl
       }
       if (isBlankCanvas.value && props.photo?.filename && typeof newUrl === 'string' && newUrl !== '') {
@@ -9945,7 +10830,43 @@ watch(hasChanges, (changed) => {
   }
 })
 
-watch(selectedOverlayId, () => {
+watch(selectedOverlayId, (nextId, prevId) => {
+  if (
+    isCollageComposition.value &&
+    prevId &&
+    prevId !== nextId &&
+    (resolveActiveBlurLevel() > 0 || resolveActivePixelateLevel() > 0)
+  ) {
+    if (!effectRectDraw.value) {
+      persistLiveEffectsToOverlay(prevId)
+      loadOverlayEffectsIntoLive(nextId)
+      if (showBlurRegion.value && blurShapeMode.value === 'rectangle') {
+        const disp = committedBlurRegion.value
+          ? committedRegionToDisplayRect(committedBlurRegion.value)
+          : null
+        if (disp) {
+          blurStart.value = { x: disp.x, y: disp.y }
+          blurSize.value = { width: disp.width, height: disp.height }
+        } else {
+          blurStart.value = { x: 0, y: 0 }
+          blurSize.value = { width: 0, height: 0 }
+        }
+      }
+      if (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle') {
+        const disp = committedPixelateRegion.value
+          ? committedRegionToDisplayRect(committedPixelateRegion.value)
+          : null
+        if (disp) {
+          pixelateStart.value = { x: disp.x, y: disp.y }
+          pixelateSize.value = { width: disp.width, height: disp.height }
+        } else {
+          pixelateStart.value = { x: 0, y: 0 }
+          pixelateSize.value = { width: 0, height: 0 }
+        }
+      }
+      applyChanges()
+    }
+  }
   if (activeControl.value === 'caption') {
     syncOverlayCaptionDraftFromSelection()
   }

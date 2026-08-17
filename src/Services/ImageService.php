@@ -386,10 +386,13 @@ class ImageService
         ImageInterface $image,
         mixed $region,
         callable $applyGlobal,
-        callable $applyPatch
+        callable $applyPatch,
+        bool $fallbackGlobal = true
     ): void {
         if (! is_array($region)) {
-            $applyGlobal($image);
+            if ($fallbackGlobal) {
+                $applyGlobal($image);
+            }
 
             return;
         }
@@ -400,7 +403,9 @@ class ImageService
         $h = (int) ($region['height'] ?? 0);
 
         if ($w < 1 || $h < 1) {
-            $applyGlobal($image);
+            if ($fallbackGlobal) {
+                $applyGlobal($image);
+            }
 
             return;
         }
@@ -411,7 +416,9 @@ class ImageService
         $h = min($h, $image->height() - $y);
 
         if ($w < 1 || $h < 1) {
-            $applyGlobal($image);
+            if ($fallbackGlobal) {
+                $applyGlobal($image);
+            }
 
             return;
         }
@@ -435,21 +442,32 @@ class ImageService
         if ($hasMask) {
             $strength = $blur > 0 ? min(100, $blur) : 12;
             $this->applyBlurWithMask($image, $maskSrc, $strength);
-
-            return;
         }
 
         if ($blur <= 0) {
             return;
         }
 
-        if ($isBrush) {
+        $region = $data->input('blur_region');
+        if (is_array($region)) {
+            $this->applyRegionEffect(
+                $image,
+                $region,
+                fn (ImageInterface $img) => $img->blur($blur),
+                fn (ImageInterface $patch) => $patch->blur($blur),
+                false
+            );
+
+            return;
+        }
+
+        if ($hasMask || $isBrush) {
             return;
         }
 
         $this->applyRegionEffect(
             $image,
-            $data->input('blur_region'),
+            null,
             fn (ImageInterface $img) => $img->blur($blur),
             fn (ImageInterface $patch) => $patch->blur($blur)
         );
@@ -480,8 +498,6 @@ class ImageService
         if ($hasMask) {
             $tile = $level > 0 ? max(1, min(100, $level)) : 1;
             $this->applyPixelateWithMask($image, $maskSrc, $tile);
-
-            return;
         }
 
         if ($level <= 0) {
@@ -489,17 +505,83 @@ class ImageService
         }
 
         $tile = max(1, min(100, $level));
+        $region = $data->input('pixelate_region');
 
-        if ($isBrush) {
+        if (is_array($region)) {
+            $this->applyRegionEffect(
+                $image,
+                $region,
+                fn (ImageInterface $img) => $img->pixelate($tile),
+                fn (ImageInterface $patch) => $patch->pixelate($tile),
+                false
+            );
+
+            return;
+        }
+
+        if ($hasMask || $isBrush) {
             return;
         }
 
         $this->applyRegionEffect(
             $image,
-            $data->input('pixelate_region'),
+            null,
             fn (ImageInterface $img) => $img->pixelate($tile),
             fn (ImageInterface $patch) => $patch->pixelate($tile)
         );
+    }
+
+    /**
+     * Desfoque/pixelização associados a uma imagem colada na folha (coords do overlay).
+     */
+    private function applyLocalImageEffects(ImageInterface $image, array $item): void
+    {
+        $blur = min(100, max(0, (int) ($item['blur'] ?? 0)));
+        $blurMask = $item['blur_mask'] ?? null;
+        $hasBlurMask = is_string($blurMask) && strlen($blurMask) > 80;
+
+        if ($hasBlurMask) {
+            $strength = $blur > 0 ? $blur : 12;
+            $this->applyBlurWithMask($image, $blurMask, $strength);
+        }
+        if ($blur > 0 && empty($item['blur_brush'])) {
+            $blurRegion = $item['blur_region'] ?? null;
+            if (is_array($blurRegion)) {
+                $this->applyRegionEffect(
+                    $image,
+                    $blurRegion,
+                    fn (ImageInterface $img) => $img->blur($blur),
+                    fn (ImageInterface $patch) => $patch->blur($blur),
+                    false
+                );
+            } elseif (! $hasBlurMask) {
+                $image->blur($blur);
+            }
+        }
+
+        $pixelate = min(100, max(0, (int) ($item['pixelate'] ?? 0)));
+        $pixelateMask = $item['pixelate_mask'] ?? null;
+        $hasPixelateMask = is_string($pixelateMask) && strlen($pixelateMask) > 80;
+
+        if ($hasPixelateMask) {
+            $tile = $pixelate > 0 ? max(1, min(100, $pixelate)) : 1;
+            $this->applyPixelateWithMask($image, $pixelateMask, $tile);
+        }
+        if ($pixelate > 0 && empty($item['pixelate_brush'])) {
+            $tile = max(1, min(100, $pixelate));
+            $pixelateRegion = $item['pixelate_region'] ?? null;
+            if (is_array($pixelateRegion)) {
+                $this->applyRegionEffect(
+                    $image,
+                    $pixelateRegion,
+                    fn (ImageInterface $img) => $img->pixelate($tile),
+                    fn (ImageInterface $patch) => $patch->pixelate($tile),
+                    false
+                );
+            } elseif (! $hasPixelateMask) {
+                $image->pixelate($tile);
+            }
+        }
     }
 
     private function applyPixelateWithMask(ImageInterface $image, string $maskSrc, int $tile): void
@@ -1117,6 +1199,7 @@ class ImageService
 
             try {
                 $overlay->resize($tw, $th);
+                $this->applyLocalImageEffects($overlay, $item);
                 $image->insert($overlay, $tx, $ty, Alignment::TOP_LEFT);
             } catch (\Throwable) {
                 continue;
