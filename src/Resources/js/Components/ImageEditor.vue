@@ -2204,6 +2204,8 @@ const sharpen = ref(0)
 const originalImageUrl = ref(props.imageUrl)
 const showingOriginal = ref(false)
 const currentImageUrl = ref(props.imageUrl)
+const previousImageUrl = ref(null)
+const isPreviewLoading = ref(false)
 const displayImageUrl = computed(() =>
   showingOriginal.value ? originalImageUrl.value : currentImageUrl.value
 )
@@ -3398,7 +3400,7 @@ const queuePixelateBrushPreview = () => {
   pixelateBrushPreviewTimer = window.setTimeout(() => {
     pixelateBrushPreviewTimer = null
     flushPreview()
-  }, 90)
+  }, 150)
 }
 
 const cancelPixelatePanPreviewRaf = () => {
@@ -3788,12 +3790,16 @@ watch(isMaskBrushModeActive, (active) => {
   }
 })
 
-const clearPixelateBrushMask = () => {
+const clearPixelateBrushMask = (clearFullMaskCaches = false) => {
   pixelateMaskDirty.value = false
   pixelBrushMaskLast = null
   if (pixelateBrushCtx && pixelateBrushCanvas) {
     pixelateBrushCtx.fillStyle = '#000000'
     pixelateBrushCtx.fillRect(0, 0, pixelBrushMaskW, pixelBrushMaskH)
+  }
+  if (clearFullMaskCaches) {
+    collageBrushFullMask = null
+    committedPixelateMaskCanvasCache = null
   }
 }
 
@@ -3811,7 +3817,7 @@ const getBrushMaskCanvasMaxSide = (nw, nh) => {
   return Math.min(cap, longEdge)
 }
 
-const ensurePixelateBrushCanvas = () => {
+const ensurePixelateBrushCanvas = (loadCommitted = false) => {
   const el = imageRef.value
   if (!el || !el.naturalWidth || !el.naturalHeight) {
     return false
@@ -3822,29 +3828,89 @@ const ensurePixelateBrushCanvas = () => {
   const scale = Math.min(1, maxSide / Math.max(nw, nh))
   const mw = Math.max(1, Math.round(nw * scale))
   const mh = Math.max(1, Math.round(nh * scale))
-  if (
+  const needsNewCanvas = !(
     pixelateBrushCanvas &&
     pixelBrushStoredNaturalW === nw &&
     pixelBrushStoredNaturalH === nh &&
     pixelBrushMaskW === mw &&
     pixelBrushMaskH === mh
-  ) {
+  )
+  if (needsNewCanvas) {
+    const oldCanvas = pixelateBrushCanvas
+    pixelateBrushCanvas = document.createElement('canvas')
+    pixelateBrushCanvas.width = mw
+    pixelateBrushCanvas.height = mh
+    pixelateBrushCtx = pixelateBrushCanvas.getContext('2d')
+    if (!pixelateBrushCtx) {
+      pixelateBrushCanvas = null
+      return false
+    }
+    pixelBrushMaskW = mw
+    pixelBrushMaskH = mh
+    pixelBrushStoredNaturalW = nw
+    pixelBrushStoredNaturalH = nh
+    pixelateBrushCtx.fillStyle = '#000000'
+    pixelateBrushCtx.fillRect(0, 0, mw, mh)
+    // Se NÃO estamos a carregar committed (ex: 2º traço), preservamos o que já
+    // foi pintado no canvas antigo, reescalando para as novas dimensões.
+    if (!loadCommitted && oldCanvas && oldCanvas.width > 0 && oldCanvas.height > 0) {
+      pixelateBrushCtx.imageSmoothingEnabled = false
+      pixelateBrushCtx.drawImage(oldCanvas, 0, 0, oldCanvas.width, oldCanvas.height, 0, 0, mw, mh)
+      pixelateMaskDirty.value = true
+    } else {
+      pixelateMaskDirty.value = false
+    }
+    pixelBrushMaskLast = null
+  }
+  if (!loadCommitted) {
     return true
   }
-  pixelateBrushCanvas = document.createElement('canvas')
-  pixelateBrushCanvas.width = mw
-  pixelateBrushCanvas.height = mh
-  pixelateBrushCtx = pixelateBrushCanvas.getContext('2d')
-  if (!pixelateBrushCtx) {
-    pixelateBrushCanvas = null
-    return false
-  }
-  pixelBrushMaskW = mw
-  pixelBrushMaskH = mh
-  pixelBrushStoredNaturalW = nw
-  pixelBrushStoredNaturalH = nh
+  // Reiniciar canvas com máscara acumulada (ou preto se não houver)
   pixelateBrushCtx.fillStyle = '#000000'
   pixelateBrushCtx.fillRect(0, 0, mw, mh)
+  // No collage, usar o canvas full-image dedicado (não o overlay-local).
+  const existingCache = isCollageComposition.value && collageBrushFullMask
+    ? collageBrushFullMask
+    : committedPixelateMaskCanvasCache
+  if (existingCache && existingCache.width > 0 && existingCache.height > 0) {
+    pixelateBrushCtx.imageSmoothingEnabled = false
+    pixelateBrushCtx.drawImage(existingCache, 0, 0, mw, mh)
+    // Não respeitar pixelateMaskDirty a false aqui — o cache pode já ter traços
+    // de sessões anteriores. Manter o estado actual ou deixar a false só se
+    // for o primeiro carregamento (sem traços acumulados).
+    pixelBrushMaskLast = null
+    return true
+  }
+  // Fallback: carregar da data URL se o cache ainda não estiver pronto.
+  // No collage, não usar committedPixelateMask (overlay-local) directamente.
+  if (!isCollageComposition.value && committedPixelateMask.value) {
+    const capturedCtx = pixelateBrushCtx
+    const capturedCanvas = pixelateBrushCanvas
+    const capturedMw = mw
+    const capturedMh = mh
+    if (!pixelateBrushCommittedLoadPromise) {
+      pixelateBrushCommittedLoadPromise = new Promise((resolve) => {
+        const img = new window.Image()
+        img.onload = () => {
+          if (capturedCtx && capturedCanvas) {
+            capturedCtx.imageSmoothingEnabled = false
+            capturedCtx.fillStyle = '#000000'
+            capturedCtx.fillRect(0, 0, capturedMw, capturedMh)
+            capturedCtx.drawImage(img, 0, 0, capturedMw, capturedMh)
+            committedPixelateMaskCanvasCache = cloneMaskCanvas(capturedCanvas)
+            flushPreview()
+          }
+          resolve()
+          pixelateBrushCommittedLoadPromise = null
+        }
+        img.onerror = () => {
+          resolve()
+          pixelateBrushCommittedLoadPromise = null
+        }
+        img.src = committedPixelateMask.value
+      })
+    }
+  }
   pixelateMaskDirty.value = false
   pixelBrushMaskLast = null
   return true
@@ -3898,7 +3964,9 @@ const paintMaskBrushSegment = (
   const dx = nx2 - nx1
   const dy = ny2 - ny1
   const dist = Math.hypot(dx, dy)
-  const step = Math.max(0.5, rMask * 0.55)
+  // Quando o utilizador mexe rápido, a distância entre eventos pode ser grande.
+  // Reduzir o step aumenta a densidade de stamps e evita “falhas” no traço.
+  const step = Math.max(0.25, rMask * 0.35)
   const n = Math.max(1, Math.ceil(dist / step))
   ctx.save()
   // Apagar = preto sólido na máscara (branco = aplicar efeito). destination-out deixa
@@ -3947,12 +4015,16 @@ const handlePixelateBrushMove = (e) => {
     e.preventDefault()
   }
   updateMaskBrushHoverFromEvent(e)
-  const p = eventToNaturalPoint(e)
-  if (pixelBrushMaskLast) {
-    drawPixelateBrushStroke(pixelBrushMaskLast.x, pixelBrushMaskLast.y, p.x, p.y)
-    queuePixelateBrushPreview()
+  // getCoalescedEvents captura todos os pontos intermédios que o browser
+  // descartou por coalescing — evita buracos quando o cursor vai rápido.
+  const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
+  for (const ce of events) {
+    const p = eventToNaturalPoint(ce)
+    if (pixelBrushMaskLast) {
+      drawPixelateBrushStroke(pixelBrushMaskLast.x, pixelBrushMaskLast.y, p.x, p.y)
+    }
+    pixelBrushMaskLast = { x: p.x, y: p.y }
   }
-  pixelBrushMaskLast = { x: p.x, y: p.y }
 }
 
 const stopPixelateBrushStroke = () => {
@@ -3967,15 +4039,111 @@ const stopPixelateBrushStroke = () => {
   window.removeEventListener('touchmove', handlePixelateBrushMove, { passive: false })
   window.removeEventListener('touchend', stopPixelateBrushStroke)
   clearPixelateBrushPreviewDebounce()
+  // Snapshot do canvas após cada traço: assim o próximo traço começa com a máscara acumulada,
+  // independentemente do que aconteça ao pixelateMaskDirty entretanto.
+  if (pixelateBrushCanvas) {
+    const _ov = isCollageComposition.value && selectedOverlayId.value
+      ? imageOverlays.value.find((o) => o.id === selectedOverlayId.value)
+      : null
+    collageBrushFullMask = cloneMaskCanvas(pixelateBrushCanvas)
+    committedPixelateMaskCanvasCache = collageBrushFullMask
+  }
+  ensurePixelateEffectStrength()
+  // Em collage, garantir persistência do mask do traço no overlay actual.
+  // Senão, ao trocar para outro overlay (ou ao adicionar novo overlay),
+  // o overlay anterior pode perder o pixelate quando voltas.
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    commitPixelateBrushMaskIfDirty()
+  }
   flushPreview()
 }
 
-const startPixelateBrushStroke = (e) => {
+const startPixelateBrushStroke = async (e) => {
   if (!showPixelateRegion.value || pixelateShapeMode.value !== 'brush' || resizeDirection.value) {
     return
   }
-  if (!ensurePixelateBrushCanvas()) {
+  // Em collage, permitir pixelizar qualquer overlay:
+  // se o utilizador começar um traço em cima de outra imagem,
+  // auto-seleccionamos essa overlay e restauramos o pixelate_mask.
+  if (isCollageComposition.value) {
+    const { x, y } = clientToImgLocal(e)
+    const hit = overlayAtDisplayPoint(x, y)
+    if (hit && hit.id !== selectedOverlayId.value) {
+      // Persistir o overlay anterior antes de trocar.
+      if (selectedOverlayId.value) {
+        persistLiveEffectsToOverlay(selectedOverlayId.value)
+      }
+
+      selectedOverlayId.value = hit.id
+
+      // Restaurar máscara persistida do novo overlay no canvas interno do brush.
+      const storedMask = hit?.effects?.pixelate_mask
+      committedPixelateRegion.value = null
+      committedPixelateMask.value = storedMask || null
+
+      // Recriar dimensões do canvas interno para termos pixelBrushMaskW/H correctos.
+      clearPixelateBrushMask()
+      await ensurePixelateBrushCanvas(false)
+
+      if (storedMask && pixelBrushStoredNaturalW && pixelBrushStoredNaturalH) {
+        // Reconstruir collageBrushFullMask na "mask space".
+        const fullCanvas = document.createElement('canvas')
+        fullCanvas.width = Math.max(1, Math.round(pixelBrushMaskW))
+        fullCanvas.height = Math.max(1, Math.round(pixelBrushMaskH))
+        const fullCtx = fullCanvas.getContext('2d')
+        if (fullCtx) {
+          fullCtx.imageSmoothingEnabled = false
+          fullCtx.fillStyle = '#000000'
+          fullCtx.fillRect(0, 0, fullCanvas.width, fullCanvas.height)
+
+          const localMaskCanvas = await loadMaskCanvasFromDataUrl(
+            storedMask,
+            hit.width,
+            hit.height
+          )
+
+          if (localMaskCanvas) {
+            const sx = (hit.x / pixelBrushStoredNaturalW) * pixelBrushMaskW
+            const sy = (hit.y / pixelBrushStoredNaturalH) * pixelBrushMaskH
+            const sw = (hit.width / pixelBrushStoredNaturalW) * pixelBrushMaskW
+            const sh = (hit.height / pixelBrushStoredNaturalH) * pixelBrushMaskH
+
+            fullCtx.drawImage(
+              localMaskCanvas,
+              0,
+              0,
+              hit.width,
+              hit.height,
+              sx,
+              sy,
+              sw,
+              sh
+            )
+          }
+
+          collageBrushFullMask = fullCanvas
+          committedPixelateMaskCanvasCache = fullCanvas
+        }
+      } else {
+        collageBrushFullMask = null
+        committedPixelateMaskCanvasCache = null
+      }
+    }
+  }
+  // Garantir que qualquer pixelização por retângulo confirmada
+  // esteja baked na máscara antes do primeiro traço da borracha.
+  if (!pixelateMaskDirty.value) {
+    await commitLiveRectangleIntoAccumulatedMask('pixelate')
+  }
+  // Só recarregamos o "committed" quando ainda não há mudanças no canvas.
+  // Senão, a cada novo traço a gente reseta a máscara e perde o que foi apagado
+  // no traço anterior.
+  const shouldLoadCommitted = !pixelateMaskDirty.value
+  if (!ensurePixelateBrushCanvas(shouldLoadCommitted)) {
     return
+  }
+  if (pixelateBrushCommittedLoadPromise) {
+    await pixelateBrushCommittedLoadPromise
   }
   ensurePixelateEffectStrength()
   e.preventDefault()
@@ -3983,6 +4151,9 @@ const startPixelateBrushStroke = (e) => {
   maskBrushStrokeErase = resolveMaskBrushEraseFromEvent(e)
   const p = eventToNaturalPoint(e)
   isPixelateBrushDrawing.value = true
+  // Registar o ponto exato do mousedown como âncora.
+  // O handlePixelateBrushMove vai ligar a partir daqui,
+  // evitando o "salto" quando getCoalescedEvents() retorna pontos desfasados.
   pixelBrushMaskLast = { x: p.x, y: p.y }
   paintMaskBrushSegment(
     pixelateBrushCtx,
@@ -3998,7 +4169,8 @@ const startPixelateBrushStroke = (e) => {
   )
   pixelateMaskDirty.value = true
   updateMaskBrushHoverFromEvent(e)
-  flushPreview()
+  // Não chamar flushPreview() aqui — o preview vai no mouseup para evitar
+  // requests a meio do traço que causam inconsistências.
   window.addEventListener('mousemove', handlePixelateBrushMove)
   window.addEventListener('mouseup', stopPixelateBrushStroke)
   window.addEventListener('touchmove', handlePixelateBrushMove, { passive: false })
@@ -4039,6 +4211,10 @@ const loadMaskCanvasFromDataUrl = (dataUrl, width, height) =>
       resolve(null)
       return
     }
+    // A máscara é binária (preto/branco). Desativar smoothing evita
+    // interpolação quando houver qualquer diferença mínima de dimensões,
+    // o que fazia retângulos antigos "mexerem" ao desenhar novos.
+    ctx.imageSmoothingEnabled = false
     ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, w, h)
     if (!dataUrl) {
@@ -4047,6 +4223,7 @@ const loadMaskCanvasFromDataUrl = (dataUrl, width, height) =>
     }
     const img = new window.Image()
     img.onload = () => {
+      ctx.imageSmoothingEnabled = false
       ctx.drawImage(img, 0, 0, w, h)
       resolve(canvas)
     }
@@ -4060,7 +4237,13 @@ const stampRectOnMaskCanvas = (canvas, rect) => {
     return
   }
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(rect.x, rect.y, rect.width, rect.height)
+  // Garantir coords inteiras para evitar drift de 1px entre operações.
+  ctx.fillRect(
+    Math.round(rect.x),
+    Math.round(rect.y),
+    Math.round(rect.width),
+    Math.round(rect.height)
+  )
 }
 
 const writeOverlayEffectPatch = (overlayId, patch) => {
@@ -4097,7 +4280,9 @@ const currentEffectNaturalRect = (kind) => {
 }
 
 const stampNaturalRectIntoEffectMask = async (kind, naturalRect) => {
-  if (!naturalRect || naturalRect.width < 4 || naturalRect.height < 4) {
+  // Permitir rects pequenos para garantir que ao alternar entre retângulo ↔ borracha
+  // não se perde o estado (o backend ignora pixelate_region quando pixelate_brush está ativo).
+  if (!naturalRect || naturalRect.width < 1 || naturalRect.height < 1) {
     return false
   }
   const isPixelate = kind === 'pixelate'
@@ -4184,34 +4369,76 @@ const bakeStoredOverlayRegionIntoMask = async (overlayId, kind) => {
   if (!ov || !region) {
     return false
   }
-  const existing =
-    kind === 'pixelate' ? ov.effects?.pixelate_mask : ov.effects?.blur_mask
-  const canvas = await loadMaskCanvasFromDataUrl(existing, ov.width, ov.height)
-  if (!canvas) {
+  const el = imageRef.value
+  if (!el?.naturalWidth || !el.naturalHeight) {
     return false
   }
-  stampRectOnMaskCanvas(canvas, region)
-  const dataUrl = exportBrushMaskCanvas(canvas)
-  if (!dataUrl) {
+
+  const fullW = el.naturalWidth
+  const fullH = el.naturalHeight
+
+  const naturalRect = overlayLocalRectToCanvas(region, ov)
+  if (!naturalRect) {
     return false
   }
+
+  const existing = kind === 'pixelate' ? ov.effects?.pixelate_mask : ov.effects?.blur_mask
+
+  // Canvas "full image" (coordenadas do brush). Vamos desenhar tudo aqui para o
+  // apagador alinhar com o cursor.
+  const fullCanvas = document.createElement('canvas')
+  fullCanvas.width = Math.max(1, Math.round(fullW))
+  fullCanvas.height = Math.max(1, Math.round(fullH))
+  const fullCtx = fullCanvas.getContext('2d')
+  if (!fullCtx) {
+    return false
+  }
+  fullCtx.imageSmoothingEnabled = false
+  fullCtx.fillStyle = '#000000'
+  fullCtx.fillRect(0, 0, fullCanvas.width, fullCanvas.height)
+
+  // Se já existir uma máscara anterior no overlay, compomos ela no canvas full.
+  if (existing) {
+    const localExistingCanvas = await loadMaskCanvasFromDataUrl(existing, ov.width, ov.height)
+    if (localExistingCanvas) {
+      fullCtx.imageSmoothingEnabled = false
+      fullCtx.drawImage(localExistingCanvas, ov.x, ov.y)
+    }
+  }
+
+  // Stamp do retângulo em coordenadas naturais (full image).
+  stampRectOnMaskCanvas(fullCanvas, naturalRect)
+
+  // Para o backend (overlay), precisamos da máscara recortada para as dimensões do overlay.
+  const overlayLocalDataUrl = cropCanvasToOverlayDataUrl(fullCanvas, ov)
+  if (!overlayLocalDataUrl) {
+    return false
+  }
+
   if (kind === 'pixelate') {
-    committedPixelateMask.value = dataUrl
+    // Guardar o canvas full-image para uso interno do brush.
+    committedPixelateMaskCanvasCache = fullCanvas
+    collageBrushFullMask = fullCanvas
+    // committedPixelateMask guarda a versão overlay-local (para o backend).
+    committedPixelateMask.value = overlayLocalDataUrl
     committedPixelateRegion.value = null
     writeOverlayEffectPatch(ov.id, {
       pixelate: Number(ov.effects?.pixelate) || pixelate.value || DEFAULT_PIXELATE_BLOCK,
-      pixelate_mask: dataUrl,
+      pixelate_mask: overlayLocalDataUrl,
       pixelate_region: undefined
     })
   } else {
-    committedBlurMask.value = dataUrl
+    committedBlurMaskCanvasCache = fullCanvas
+    collageBrushBlurFullMask = fullCanvas
+    committedBlurMask.value = overlayLocalDataUrl
     committedBlurRegion.value = null
     writeOverlayEffectPatch(ov.id, {
       blur: Number(ov.effects?.blur) || blur.value || DEFAULT_BLUR_STRENGTH,
-      blur_mask: dataUrl,
+      blur_mask: overlayLocalDataUrl,
       blur_region: undefined
     })
   }
+
   return true
 }
 
@@ -4239,7 +4466,7 @@ const clearBlurBrushMask = () => {
   }
 }
 
-const ensureBlurBrushCanvas = () => {
+const ensureBlurBrushCanvas = (loadCommitted = false) => {
   const el = imageRef.value
   if (!el || !el.naturalWidth || !el.naturalHeight) {
     return false
@@ -4250,29 +4477,72 @@ const ensureBlurBrushCanvas = () => {
   const scale = Math.min(1, maxSide / Math.max(nw, nh))
   const mw = Math.max(1, Math.round(nw * scale))
   const mh = Math.max(1, Math.round(nh * scale))
-  if (
+  const needsNewBlurCanvas = !(
     blurBrushCanvas &&
     blurBrushStoredNaturalW === nw &&
     blurBrushStoredNaturalH === nh &&
     blurBrushMaskW === mw &&
     blurBrushMaskH === mh
-  ) {
+  )
+  if (needsNewBlurCanvas) {
+    const oldCanvas = blurBrushCanvas
+    blurBrushCanvas = document.createElement('canvas')
+    blurBrushCanvas.width = mw
+    blurBrushCanvas.height = mh
+    blurBrushCtx = blurBrushCanvas.getContext('2d')
+    if (!blurBrushCtx) {
+      blurBrushCanvas = null
+      return false
+    }
+    blurBrushMaskW = mw
+    blurBrushMaskH = mh
+    blurBrushStoredNaturalW = nw
+    blurBrushStoredNaturalH = nh
+    blurBrushCtx.fillStyle = '#000000'
+    blurBrushCtx.fillRect(0, 0, mw, mh)
+    // Se estivermos a recriar o canvas mas não estamos a carregar committed,
+    // preservamos o que já foi pintado (senão o 1º traço pode "sumir" ao fazer
+    // o 2º rápido).
+    if (!loadCommitted && oldCanvas && oldCanvas.width > 0 && oldCanvas.height > 0) {
+      blurBrushCtx.imageSmoothingEnabled = false
+      blurBrushCtx.drawImage(oldCanvas, 0, 0, oldCanvas.width, oldCanvas.height, 0, 0, mw, mh)
+      blurMaskDirty.value = true
+    } else {
+      blurMaskDirty.value = false
+    }
+    blurBrushMaskLast = null
+  }
+  if (!loadCommitted) {
     return true
   }
-  blurBrushCanvas = document.createElement('canvas')
-  blurBrushCanvas.width = mw
-  blurBrushCanvas.height = mh
-  blurBrushCtx = blurBrushCanvas.getContext('2d')
-  if (!blurBrushCtx) {
-    blurBrushCanvas = null
-    return false
-  }
-  blurBrushMaskW = mw
-  blurBrushMaskH = mh
-  blurBrushStoredNaturalW = nw
-  blurBrushStoredNaturalH = nh
+  // Reiniciar canvas com máscara acumulada (ou preto se não houver)
   blurBrushCtx.fillStyle = '#000000'
   blurBrushCtx.fillRect(0, 0, mw, mh)
+  const existingBlurCache = committedBlurMaskCanvasCache
+  if (existingBlurCache && existingBlurCache.width > 0 && existingBlurCache.height > 0) {
+    blurBrushCtx.drawImage(existingBlurCache, 0, 0, mw, mh)
+    blurMaskDirty.value = false
+    blurBrushMaskLast = null
+    return true
+  }
+  // Fallback: carregar da data URL se o cache ainda não estiver pronto
+  if (committedBlurMask.value) {
+    const capturedBlurCtx = blurBrushCtx
+    const capturedBlurCanvas = blurBrushCanvas
+    const capturedMw = mw
+    const capturedMh = mh
+    const img = new window.Image()
+    img.onload = () => {
+      if (capturedBlurCtx && capturedBlurCanvas) {
+        capturedBlurCtx.fillStyle = '#000000'
+        capturedBlurCtx.fillRect(0, 0, capturedMw, capturedMh)
+        capturedBlurCtx.drawImage(img, 0, 0, capturedMw, capturedMh)
+        committedBlurMaskCanvasCache = cloneMaskCanvas(capturedBlurCanvas)
+        flushPreview()
+      }
+    }
+    img.src = committedBlurMask.value
+  }
   blurMaskDirty.value = false
   blurBrushMaskLast = null
   return true
@@ -4314,12 +4584,16 @@ const handleBlurBrushMove = (e) => {
     e.preventDefault()
   }
   updateMaskBrushHoverFromEvent(e)
-  const p = eventToNaturalPoint(e)
-  if (blurBrushMaskLast) {
-    drawBlurBrushStroke(blurBrushMaskLast.x, blurBrushMaskLast.y, p.x, p.y)
-    queueBlurBrushPreview()
+  const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e]
+  for (const ce of events) {
+    const p = eventToNaturalPoint(ce)
+    if (blurBrushMaskLast) {
+      drawBlurBrushStroke(blurBrushMaskLast.x, blurBrushMaskLast.y, p.x, p.y)
+    }
+    blurBrushMaskLast = { x: p.x, y: p.y }
   }
-  blurBrushMaskLast = { x: p.x, y: p.y }
+  // Evitar preview intermédio durante o drag: manter só o flush no fim do traço
+  // reduz “falhas” e frames intermédios incorretos.
 }
 
 const stopBlurBrushStroke = () => {
@@ -4334,14 +4608,87 @@ const stopBlurBrushStroke = () => {
   window.removeEventListener('touchmove', handleBlurBrushMove, { passive: false })
   window.removeEventListener('touchend', stopBlurBrushStroke)
   clearBlurBrushPreviewDebounce()
+  ensureBlurEffectStrength()
+  // Em collage, persistir o blur_mask do traço no overlay actual.
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    commitBlurBrushMaskIfDirty()
+    persistLiveEffectsToOverlay(selectedOverlayId.value)
+  }
   flushPreview()
 }
 
-const startBlurBrushStroke = (e) => {
+const startBlurBrushStroke = async (e) => {
   if (!showBlurRegion.value || blurShapeMode.value !== 'brush' || resizeDirection.value) {
     return
   }
-  if (!ensureBlurBrushCanvas()) {
+  // Em collage, permitir blur em qualquer overlay por baixo do cursor.
+  if (isCollageComposition.value) {
+    const { x, y } = clientToImgLocal(e)
+    const hit = overlayAtDisplayPoint(x, y)
+    if (hit && hit.id !== selectedOverlayId.value) {
+      if (selectedOverlayId.value) {
+        persistLiveEffectsToOverlay(selectedOverlayId.value)
+      }
+      selectedOverlayId.value = hit.id
+
+      const storedMask = hit?.effects?.blur_mask
+      committedBlurRegion.value = null
+      committedBlurMask.value = storedMask || null
+
+      // Recriar dimensões e carregar a máscara persistida no canvas interno.
+      if (!ensureBlurBrushCanvas(false)) {
+        return
+      }
+      clearBlurBrushMask()
+
+      if (storedMask) {
+        const fullCanvas = document.createElement('canvas')
+        fullCanvas.width = Math.max(1, Math.round(blurBrushMaskW))
+        fullCanvas.height = Math.max(1, Math.round(blurBrushMaskH))
+        const fullCtx = fullCanvas.getContext('2d')
+        if (fullCtx) {
+          fullCtx.imageSmoothingEnabled = false
+          fullCtx.fillStyle = '#000000'
+          fullCtx.fillRect(0, 0, fullCanvas.width, fullCanvas.height)
+
+          const localMaskCanvas = await loadMaskCanvasFromDataUrl(
+            storedMask,
+            hit.width,
+            hit.height
+          )
+
+          if (localMaskCanvas) {
+            const sx = (hit.x / (blurBrushStoredNaturalW || 1)) * blurBrushMaskW
+            const sy = (hit.y / (blurBrushStoredNaturalH || 1)) * blurBrushMaskH
+            const sw = (hit.width / (blurBrushStoredNaturalW || 1)) * blurBrushMaskW
+            const sh = (hit.height / (blurBrushStoredNaturalH || 1)) * blurBrushMaskH
+
+            fullCtx.drawImage(
+              localMaskCanvas,
+              0,
+              0,
+              hit.width,
+              hit.height,
+              sx,
+              sy,
+              sw,
+              sh
+            )
+          }
+
+          committedBlurMaskCanvasCache = fullCanvas
+          collageBrushBlurFullMask = fullCanvas
+          ensureBlurBrushCanvas(true)
+        }
+      } else {
+        committedBlurMaskCanvasCache = null
+        collageBrushBlurFullMask = null
+        ensureBlurBrushCanvas(true)
+      }
+    }
+  }
+  const shouldLoadCommitted = !blurMaskDirty.value
+  if (!ensureBlurBrushCanvas(shouldLoadCommitted)) {
     return
   }
   ensureBlurEffectStrength()
@@ -4365,7 +4712,6 @@ const startBlurBrushStroke = (e) => {
   )
   blurMaskDirty.value = true
   updateMaskBrushHoverFromEvent(e)
-  flushPreview()
   window.addEventListener('mousemove', handleBlurBrushMove)
   window.addEventListener('mouseup', stopBlurBrushStroke)
   window.addEventListener('touchmove', handleBlurBrushMove, { passive: false })
@@ -4418,10 +4764,10 @@ const onImageLoad = () => {
   syncImageNaturalMetrics()
   nextTick(() => ensureImageLayoutObserver())
   if (showPixelateRegion.value && pixelateShapeMode.value === 'brush') {
-    ensurePixelateBrushCanvas()
+    ensurePixelateBrushCanvas(true)
   }
   if (showBlurRegion.value && blurShapeMode.value === 'brush') {
-    ensureBlurBrushCanvas()
+    ensureBlurBrushCanvas(true)
   }
   const el = imageRef.value
   if (!el?.naturalWidth) {
@@ -4783,12 +5129,6 @@ const handleEffectRectDraw = (e) => {
   const startRef = draw.kind === 'blur' ? blurStart : pixelateStart
   const sizeRef = draw.kind === 'blur' ? blurSize : pixelateSize
   applyEffectRectDrawBox(draw.x0, draw.y0, x, y, startRef, sizeRef)
-  if (!effectRectDrawPreviewRaf) {
-    effectRectDrawPreviewRaf = requestAnimationFrame(() => {
-      effectRectDrawPreviewRaf = 0
-      scheduleApplyChanges()
-    })
-  }
 }
 
 const overlayAtDisplayPoint = (x, y) => {
@@ -5036,6 +5376,11 @@ const toggleCrop = () => {
 
 let committedPixelateMaskCanvasCache = null
 let committedBlurMaskCanvasCache = null
+let pixelateBrushCommittedLoadPromise = null
+// No collage, armazenamos a máscara full-image separadamente do `committedPixelateMask`
+// (que guarda a versão overlay-local para o backend).
+let collageBrushFullMask = null   // pixelate
+let collageBrushBlurFullMask = null // blur
 
 const cloneMaskCanvas = (source) => {
   if (!source) {
@@ -5063,6 +5408,8 @@ const syncBlurMaskCacheFromBrush = () => {
 const clearCommittedMaskCanvasCaches = () => {
   committedPixelateMaskCanvasCache = null
   committedBlurMaskCanvasCache = null
+  collageBrushFullMask = null
+  collageBrushBlurFullMask = null
 }
 
 const loadCommittedMaskCacheFromDataUrl = (dataUrl, kind) =>
@@ -5682,6 +6029,40 @@ const commitPixelateBrushMaskIfDirty = () => {
     return
   }
   const dataUrl = exportBrushMaskCanvas(pixelateBrushCanvas)
+  if (!dataUrl) {
+    return
+  }
+  if (isCollageComposition.value && selectedOverlayId.value) {
+    // No collage: atualizar o canvas full-image interno e recortar para o overlay.
+    collageBrushFullMask = cloneMaskCanvas(pixelateBrushCanvas)
+    committedPixelateMaskCanvasCache = collageBrushFullMask
+    const ov = imageOverlays.value.find((item) => item.id === selectedOverlayId.value)
+    if (ov) {
+      const overlayDataUrl = cropMaskCanvasToOverlayDataUrl(
+        pixelateBrushCanvas, ov,
+        pixelBrushStoredNaturalW, pixelBrushStoredNaturalH,
+        pixelBrushMaskW, pixelBrushMaskH
+      )
+      if (overlayDataUrl) {
+        committedPixelateMask.value = overlayDataUrl
+        writeOverlayEffectPatch(ov.id, {
+          pixelate: pixelate.value || DEFAULT_PIXELATE_BLOCK,
+          pixelate_mask: overlayDataUrl,
+          pixelate_region: undefined
+        })
+      }
+    }
+  } else {
+    committedPixelateMask.value = dataUrl
+    syncPixelateMaskCacheFromBrush()
+  }
+}
+
+const commitPixelateBrushMaskFromCanvas = () => {
+  if (!pixelateBrushCanvas) {
+    return
+  }
+  const dataUrl = exportBrushMaskCanvas(pixelateBrushCanvas)
   if (dataUrl) {
     committedPixelateMask.value = dataUrl
     syncPixelateMaskCacheFromBrush()
@@ -5690,6 +6071,17 @@ const commitPixelateBrushMaskIfDirty = () => {
 
 const commitBlurBrushMaskIfDirty = () => {
   if (!blurMaskDirty.value || !blurBrushCanvas) {
+    return
+  }
+  const dataUrl = exportBrushMaskCanvas(blurBrushCanvas)
+  if (dataUrl) {
+    committedBlurMask.value = dataUrl
+    syncBlurMaskCacheFromBrush()
+  }
+}
+
+const commitBlurBrushMaskFromCanvas = () => {
+  if (!blurBrushCanvas) {
     return
   }
   const dataUrl = exportBrushMaskCanvas(blurBrushCanvas)
@@ -5715,6 +6107,9 @@ const prepareSwitchFromPixelateTool = () => {
   }
   if (pixelateShapeMode.value === 'brush') {
     commitPixelateBrushMaskIfDirty()
+    if (committedPixelateMask.value) {
+      ensurePixelateEffectStrength()
+    }
     stopPixelateBrushStroke()
     stopPixelatePan()
     showPixelateRegion.value = false
@@ -5739,6 +6134,9 @@ const prepareSwitchFromBlurTool = () => {
   }
   if (blurShapeMode.value === 'brush') {
     commitBlurBrushMaskIfDirty()
+    if (committedBlurMask.value) {
+      ensureBlurEffectStrength()
+    }
     stopBlurBrushStroke()
     stopBlurPan()
     showBlurRegion.value = false
@@ -5754,31 +6152,81 @@ const commitPendingEffectEdits = () => {
 }
 
 const closeEffectOption = (kind) => {
-  commitPendingEffectEdits()
-  if (isCollageComposition.value && selectedOverlayId.value) {
-    persistLiveEffectsToOverlay(selectedOverlayId.value)
+  // Para imagem simples: commitar sem resetar o shapeMode, para que
+  // resolvePixelateMaskPayload/resolveBlurMaskPayload funcionem correctamente
+  if (!isCollageComposition.value || !selectedOverlayId.value) {
     if (kind === 'blur') {
-      blur.value = 0
-      committedBlurRegion.value = null
-      committedBlurMask.value = null
-      blurApplyGlobal.value = false
-      clearBlurBrushMask()
-      showBlurRegion.value = false
+      if (showBlurRegion.value && blurShapeMode.value === 'rectangle') {
+        const natural = captureBlurRegionFromDisplay()
+        if (natural) {
+          committedBlurRegion.value = natural
+          blurApplyGlobal.value = false
+        }
+        exitBlurRectangleUi()
+      } else if (blurShapeMode.value === 'brush') {
+        commitBlurBrushMaskIfDirty()
+        if (committedBlurMask.value) {
+          ensureBlurEffectStrength()
+        }
+        stopBlurBrushStroke()
+        stopBlurPan()
+      }
+      showBlurMenu.value = false
+      if (activeControl.value === 'blur') {
+        activeControl.value = null
+      }
     } else {
-      pixelate.value = 0
-      committedPixelateRegion.value = null
-      committedPixelateMask.value = null
-      pixelateApplyGlobal.value = false
-      clearPixelateBrushMask()
-      showPixelateRegion.value = false
+      if (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle') {
+        const natural = capturePixelateRegionFromDisplay()
+        if (natural) {
+          committedPixelateRegion.value = natural
+          pixelateApplyGlobal.value = false
+        }
+        exitPixelateRectangleUi()
+      } else if (pixelateShapeMode.value === 'brush') {
+        commitPixelateBrushMaskIfDirty()
+        if (committedPixelateMask.value) {
+          ensurePixelateEffectStrength()
+        }
+        stopPixelateBrushStroke()
+        stopPixelatePan()
+      }
+      showPixelateMenu.value = false
+      if (activeControl.value === 'pixelate') {
+        activeControl.value = null
+      }
     }
+    applyChanges()
+    return
   }
+  // Commitar o que está no canvas de brush (se sujo) ANTES de persistir no overlay.
   if (kind === 'blur') {
+    commitBlurBrushMaskIfDirty()
+  } else {
+    commitPixelateBrushMaskIfDirty()
+  }
+  // Persistir efeitos ANTES de commitar/resetar o shapeMode,
+  // senão o pixelateShapeMode já está 'rectangle' quando liveEffectsAsOverlayLocal corre.
+  persistLiveEffectsToOverlay(selectedOverlayId.value)
+  commitPendingEffectEdits()
+  if (kind === 'blur') {
+    blur.value = 0
+    committedBlurRegion.value = null
+    committedBlurMask.value = null
+    blurApplyGlobal.value = false
+    clearBlurBrushMask()
+    showBlurRegion.value = false
     showBlurMenu.value = false
     if (activeControl.value === 'blur') {
       activeControl.value = null
     }
   } else {
+    pixelate.value = 0
+    committedPixelateRegion.value = null
+    committedPixelateMask.value = null
+    pixelateApplyGlobal.value = false
+    clearPixelateBrushMask(true)  // limpa também os caches full-image
+    showPixelateRegion.value = false
     showPixelateMenu.value = false
     if (activeControl.value === 'pixelate') {
       activeControl.value = null
@@ -6932,9 +7380,7 @@ const hasActiveBlurTarget = () =>
     blurApplyGlobal.value ||
     committedBlurRegion.value ||
     committedBlurMask.value ||
-    (showBlurRegion.value &&
-      blurShapeMode.value === 'brush' &&
-      blurMaskDirty.value) ||
+    (blurShapeMode.value === 'brush' && blurMaskDirty.value) ||
     (showBlurRegion.value && blurShapeMode.value === 'rectangle')
   )
 
@@ -6943,35 +7389,25 @@ const hasActivePixelateTarget = () =>
     pixelateApplyGlobal.value ||
     committedPixelateRegion.value ||
     committedPixelateMask.value ||
-    (showPixelateRegion.value &&
-      pixelateShapeMode.value === 'brush' &&
-      pixelateMaskDirty.value) ||
+    (pixelateShapeMode.value === 'brush' && pixelateMaskDirty.value) ||
     (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle')
   )
 
 const resolveBlurMaskPayload = () => {
-  if (resolveActiveBlurLevel() <= 0) {
+  if (resolveActiveBlurLevel() <= 0 || blurShapeMode.value !== 'brush') {
     return null
   }
-  if (
-    showBlurRegion.value &&
-    blurShapeMode.value === 'brush' &&
-    blurMaskDirty.value
-  ) {
+  if (blurMaskDirty.value) {
     return exportBlurMaskDataUrl()
   }
   return committedBlurMask.value
 }
 
 const resolvePixelateMaskPayload = () => {
-  if (resolveActivePixelateLevel() <= 0) {
+  if (resolveActivePixelateLevel() <= 0 || pixelateShapeMode.value !== 'brush') {
     return null
   }
-  if (
-    showPixelateRegion.value &&
-    pixelateShapeMode.value === 'brush' &&
-    pixelateMaskDirty.value
-  ) {
+  if (pixelateMaskDirty.value) {
     return exportPixelateMaskDataUrl()
   }
   return committedPixelateMask.value
@@ -7034,8 +7470,14 @@ const blankCanvasUsesDomOverlays = computed(
 )
 
 /** Oculta overlays DOM só durante edição activa de desfoque/pixelização. */
+const collageCompositeReady = computed(
+  // A imagem composta do servidor é base64 (muito longa). A URL original é curta (~69 chars).
+  // Só esconder os overlays DOM quando temos a imagem composta do servidor.
+  () => typeof currentImageUrl.value === 'string' && currentImageUrl.value.length > 500
+)
+
 const shouldHideDomImageOverlays = computed(
-  () => collageHasLocalEffects.value && isEffectRegionToolActive.value
+  () => collageHasLocalEffects.value && isEffectRegionToolActive.value && collageCompositeReady.value
 )
 
 /** Pré-visualização composta: overlays invisíveis mas arrastáveis (filtros ou efeitos locais fechados). */
@@ -8709,28 +9151,91 @@ const cropCanvasToOverlayDataUrl = (sourceCanvas, ov) => {
   return c.toDataURL('image/png')
 }
 
+/**
+ * Corta uma máscara do "full image" (que pode estar reduzida por maxSide) para as
+ * coordenadas do overlay.
+ */
+const cropMaskCanvasToOverlayDataUrl = (
+  sourceCanvas,
+  ov,
+  storedNaturalW,
+  storedNaturalH,
+  maskCanvasW,
+  maskCanvasH
+) => {
+  if (!sourceCanvas || !ov) {
+    return null
+  }
+  if (!storedNaturalW || !storedNaturalH || !maskCanvasW || !maskCanvasH) {
+    return null
+  }
+
+  const outW = Math.max(1, Math.round(ov.width))
+  const outH = Math.max(1, Math.round(ov.height))
+
+  const c = document.createElement('canvas')
+  c.width = outW
+  c.height = outH
+  const ctx = c.getContext('2d')
+  if (!ctx) {
+    return null
+  }
+
+  const sx = (ov.x / storedNaturalW) * maskCanvasW
+  const sy = (ov.y / storedNaturalH) * maskCanvasH
+  const sw = (ov.width / storedNaturalW) * maskCanvasW
+  const sh = (ov.height / storedNaturalH) * maskCanvasH
+
+  // Clamp para evitar drawImage com coords negativas/fora.
+  const cx = Math.max(0, Math.min(maskCanvasW - 1, sx))
+  const cy = Math.max(0, Math.min(maskCanvasH - 1, sy))
+  const cw = Math.max(1, Math.min(maskCanvasW - cx, sw))
+  const ch = Math.max(1, Math.min(maskCanvasH - cy, sh))
+
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(sourceCanvas, cx, cy, cw, ch, 0, 0, outW, outH)
+  return c.toDataURL('image/png')
+}
+
 const liveEffectsAsOverlayLocal = (ov) => {
   const effects = { ...(ov.effects || {}) }
+
   const blurLevel = resolveActiveBlurLevel()
   if (blurLevel > 0) {
     effects.blur = blurLevel
     const blurIsBrush = Boolean(
-      (showBlurRegion.value && blurShapeMode.value === 'brush') ||
-        (committedBlurMask.value && blurShapeMode.value === 'brush')
+      blurShapeMode.value === 'brush' &&
+        (committedBlurMask.value || (showBlurRegion.value && blurBrushCanvas))
     )
     effects.blur_brush = blurIsBrush
     if (blurApplyGlobal.value) {
       delete effects.blur_region
       delete effects.blur_mask
-    } else if (blurIsBrush && (blurBrushCanvas || committedBlurMaskCanvasCache)) {
-      const source =
+    } else if (blurIsBrush && (blurBrushCanvas || committedBlurMask.value)) {
+      const activeBlurCanvas =
         showBlurRegion.value && blurShapeMode.value === 'brush' && blurBrushCanvas
           ? blurBrushCanvas
-          : committedBlurMaskCanvasCache
-      const cropped = cropCanvasToOverlayDataUrl(source, ov)
-      if (cropped) {
-        effects.blur_mask = cropped
+          : null
+
+      if (activeBlurCanvas) {
+        const cropped = cropMaskCanvasToOverlayDataUrl(
+          activeBlurCanvas,
+          ov,
+          blurBrushStoredNaturalW,
+          blurBrushStoredNaturalH,
+          blurBrushMaskW,
+          blurBrushMaskH
+        )
+        if (cropped) {
+          effects.blur_mask = cropped
+        }
+      } else {
+        const storedBlurMask = ov.effects?.blur_mask
+        if (storedBlurMask) {
+          effects.blur_mask = storedBlurMask
+        }
       }
+
       delete effects.blur_region
     } else {
       const local = canvasRectToOverlayLocal(resolveBlurRegionPayload(), ov)
@@ -8739,12 +9244,8 @@ const liveEffectsAsOverlayLocal = (ov) => {
       } else {
         delete effects.blur_region
       }
-      const overlayMask =
-        ov.id === selectedOverlayId.value && committedBlurMask.value
-          ? committedBlurMask.value
-          : effects.blur_mask
-      if (overlayMask) {
-        effects.blur_mask = overlayMask
+      if (ov.effects?.blur_mask) {
+        effects.blur_mask = ov.effects.blur_mask
       }
     }
   }
@@ -8753,36 +9254,52 @@ const liveEffectsAsOverlayLocal = (ov) => {
   if (pixelateLevel > 0) {
     effects.pixelate = pixelateLevel
     const pixelateIsBrush = Boolean(
-      (showPixelateRegion.value && pixelateShapeMode.value === 'brush') ||
-        (committedPixelateMask.value && pixelateShapeMode.value === 'brush')
+      pixelateShapeMode.value === 'brush' &&
+        (committedPixelateMask.value || (showPixelateRegion.value && pixelateBrushCanvas))
     )
     effects.pixelate_brush = pixelateIsBrush
     if (pixelateApplyGlobal.value) {
       delete effects.pixelate_region
       delete effects.pixelate_mask
-    } else if (pixelateIsBrush && (pixelateBrushCanvas || committedPixelateMaskCanvasCache)) {
-      const source =
+    } else if (pixelateIsBrush && (pixelateBrushCanvas || committedPixelateMask.value)) {
+      const activeCanvas =
         showPixelateRegion.value && pixelateShapeMode.value === 'brush' && pixelateBrushCanvas
           ? pixelateBrushCanvas
-          : committedPixelateMaskCanvasCache
-      const cropped = cropCanvasToOverlayDataUrl(source, ov)
-      if (cropped) {
-        effects.pixelate_mask = cropped
+          : null
+
+      if (activeCanvas) {
+        // Brush activo: recortamos o canvas full-image para as coordenadas do overlay
+        const cropped = cropMaskCanvasToOverlayDataUrl(
+          activeCanvas,
+          ov,
+          pixelBrushStoredNaturalW,
+          pixelBrushStoredNaturalH,
+          pixelBrushMaskW,
+          pixelBrushMaskH
+        )
+        if (cropped) {
+          effects.pixelate_mask = cropped
+        }
+      } else {
+        // Sem brush activo: usamos a máscara já persistida no overlay (overlay-local)
+        const storedMask = ov.effects?.pixelate_mask
+        if (storedMask) {
+          effects.pixelate_mask = storedMask
+        }
       }
+
       delete effects.pixelate_region
     } else {
+      // Modo retângulo: a region vai no campo pixelate_region
       const local = canvasRectToOverlayLocal(resolvePixelateRegionPayload(), ov)
       if (local) {
         effects.pixelate_region = local
       } else {
         delete effects.pixelate_region
       }
-      const overlayMask =
-        ov.id === selectedOverlayId.value && committedPixelateMask.value
-          ? committedPixelateMask.value
-          : effects.pixelate_mask
-      if (overlayMask) {
-        effects.pixelate_mask = overlayMask
+      // Máscara acumulada de bakes anteriores (overlay-local, já persistida no overlay)
+      if (ov.effects?.pixelate_mask) {
+        effects.pixelate_mask = ov.effects.pixelate_mask
       }
     }
   }
@@ -8825,7 +9342,8 @@ const clearLiveEffectState = () => {
   committedPixelateRegion.value = null
   committedPixelateMask.value = null
   pixelateApplyGlobal.value = false
-  clearPixelateBrushMask()
+  clearPixelateBrushMask(true)
+  collageBrushBlurFullMask = null
 }
 
 const loadOverlayEffectsIntoLive = (overlayId) => {
@@ -8845,6 +9363,7 @@ const loadOverlayEffectsIntoLive = (overlayId) => {
     }
     if (effects.blur_mask) {
       committedBlurMask.value = effects.blur_mask
+      loadCommittedMaskCacheFromDataUrl(effects.blur_mask, 'blur')
     }
   }
   if ((Number(effects.pixelate) || 0) > 0) {
@@ -8857,6 +9376,7 @@ const loadOverlayEffectsIntoLive = (overlayId) => {
     }
     if (effects.pixelate_mask) {
       committedPixelateMask.value = effects.pixelate_mask
+      loadCommittedMaskCacheFromDataUrl(effects.pixelate_mask, 'pixelate')
     }
   }
 }
@@ -10009,22 +10529,74 @@ const selectBlurGlobal = () => {
   applyChanges()
 }
 
-const selectBlurBrush = () => {
+const selectBlurBrush = async () => {
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
   if (!showBlurRegion.value || blurShapeMode.value !== 'brush') {
     ensureBlurEffectStrength()
     prepareSwitchFromPixelateTool()
-    committedBlurRegion.value = null
-    committedBlurMask.value = null
+    // Fazer bake de região acumulada na máscara antes de mudar para borracha
+    await commitLiveRectangleIntoAccumulatedMask('blur')
+    // Só limpamos a região se a máscara tiver sido realmente criada.
+    if (committedBlurMask.value) {
+      committedBlurRegion.value = null
+    }
     blurApplyGlobal.value = false
     blurShapeMode.value = 'brush'
     showBlurRegion.value = true
     activeControl.value = 'blur'
     stopBlurPan()
+    // Em collage, ao reabrir o menu do blur brush, restaurar o blur_mask persistido
+    // do overlay seleccionado para não parecer que deu reset.
+    if (isCollageComposition.value && selectedOverlayId.value && !committedBlurMask.value) {
+      const ov = imageOverlays.value.find((o) => o.id === selectedOverlayId.value)
+      const storedMask = ov?.effects?.blur_mask
+      if (ov && storedMask) {
+        await ensureBlurBrushCanvas(false)
+        committedBlurMask.value = storedMask
+
+        const fullCanvas = document.createElement('canvas')
+        fullCanvas.width = Math.max(1, Math.round(blurBrushMaskW))
+        fullCanvas.height = Math.max(1, Math.round(blurBrushMaskH))
+        const fullCtx = fullCanvas.getContext('2d')
+        if (fullCtx) {
+          fullCtx.imageSmoothingEnabled = false
+          fullCtx.fillStyle = '#000000'
+          fullCtx.fillRect(0, 0, fullCanvas.width, fullCanvas.height)
+
+          const localMaskCanvas = await loadMaskCanvasFromDataUrl(
+            storedMask,
+            ov.width,
+            ov.height
+          )
+
+          if (localMaskCanvas) {
+            const sx = (ov.x / (blurBrushStoredNaturalW || 1)) * blurBrushMaskW
+            const sy = (ov.y / (blurBrushStoredNaturalH || 1)) * blurBrushMaskH
+            const sw = (ov.width / (blurBrushStoredNaturalW || 1)) * blurBrushMaskW
+            const sh = (ov.height / (blurBrushStoredNaturalH || 1)) * blurBrushMaskH
+
+            fullCtx.drawImage(
+              localMaskCanvas,
+              0,
+              0,
+              ov.width,
+              ov.height,
+              sx,
+              sy,
+              sw,
+              sh
+            )
+          }
+
+          committedBlurMaskCanvasCache = fullCanvas
+          collageBrushBlurFullMask = fullCanvas
+        }
+      }
+    }
     clearBlurBrushMask()
-    ensureBlurBrushCanvas()
+    ensureBlurBrushCanvas(true)
     scheduleApplyChanges()
     syncMaskBrushHoverAfterModeEnter()
   } else {
@@ -10049,23 +10621,112 @@ const selectPixelateRectangle = () => {
   }
 }
 
-const selectPixelateBrush = () => {
+const selectPixelateBrush = async () => {
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
   if (!showPixelateRegion.value || pixelateShapeMode.value !== 'brush') {
+    // Cancelar qualquer preview pendente/em-flight — se a resposta antiga chegar
+    // ao servidor com estado anterior (rectangle/sem efeito) após mudarmos para brush,
+    // causa o "piscar". Incrementar requestId invalida respostas em-flight.
+    clearPreviewDebounceTimer()
+    previewRequestId++
+    previewPending = false
+    previewPendingOptions = null
     ensurePixelateEffectStrength()
     prepareSwitchFromBlurTool()
-    committedPixelateRegion.value = null
-    committedPixelateMask.value = null
+    // Fazer bake dos retângulos confirmados na máscara antes de entrar na borracha.
+    // No canvas (collage), o rect está guardado em ov.effects.pixelate_region (coords overlay).
+    // Fora do canvas (imagem simples), está em committedPixelateRegion (coords naturais).
+    if (isCollageComposition.value && selectedOverlayId.value) {
+      await bakeStoredOverlayRegionIntoMask(selectedOverlayId.value, 'pixelate')
+    } else {
+      await commitLiveRectangleIntoAccumulatedMask('pixelate')
+    }
+    // Só limpamos a região se a máscara realmente estiver pronta.
+    if (committedPixelateMask.value) {
+      committedPixelateRegion.value = null
+    }
     pixelateApplyGlobal.value = false
     pixelateShapeMode.value = 'brush'
-    showPixelateRegion.value = true
     activeControl.value = 'pixelate'
     stopPixelatePan()
+    // Em collage, ao reabrir o menu do brush, pode acontecer que caches do
+    // canvas tenham sido limpas no close. Restaura então a máscara persistida
+    // no overlay seleccionado (pixelate_mask) para o brush conseguir renderizar
+    // novamente o que já estava apagado/pixelizado.
+    if (isCollageComposition.value && selectedOverlayId.value && !committedPixelateMask.value) {
+      const ov = imageOverlays.value.find((o) => o.id === selectedOverlayId.value)
+      const storedMask = ov?.effects?.pixelate_mask
+      if (ov && storedMask) {
+        // Garantir que o canvas interno do brush foi inicializado para termos:
+        // pixelBrushStoredNaturalW/H e pixelBrushMaskW/H (mask space).
+        // Assim reconstruímos a full-mask no sistema de coordenadas correcto.
+        await ensurePixelateBrushCanvas(false)
+
+        committedPixelateMask.value = storedMask
+
+        const fullCanvas = document.createElement('canvas')
+        fullCanvas.width = Math.max(1, Math.round(pixelBrushMaskW))
+        fullCanvas.height = Math.max(1, Math.round(pixelBrushMaskH))
+
+        const fullCtx = fullCanvas.getContext('2d')
+        if (fullCtx) {
+          fullCtx.imageSmoothingEnabled = false
+          fullCtx.fillStyle = '#000000'
+          fullCtx.fillRect(0, 0, fullCanvas.width, fullCanvas.height)
+
+          const localMaskCanvas = await loadMaskCanvasFromDataUrl(
+            storedMask,
+            ov.width,
+            ov.height
+          )
+          if (localMaskCanvas) {
+            const sx = (ov.x / (pixelBrushStoredNaturalW || 1)) * pixelBrushMaskW
+            const sy = (ov.y / (pixelBrushStoredNaturalH || 1)) * pixelBrushMaskH
+            const sw = (ov.width / (pixelBrushStoredNaturalW || 1)) * pixelBrushMaskW
+            const sh = (ov.height / (pixelBrushStoredNaturalH || 1)) * pixelBrushMaskH
+
+            fullCtx.drawImage(
+              localMaskCanvas,
+              0,
+              0,
+              ov.width,
+              ov.height,
+              sx,
+              sy,
+              sw,
+              sh
+            )
+          }
+
+          collageBrushFullMask = fullCanvas
+          committedPixelateMaskCanvasCache = fullCanvas
+        }
+      }
+    }
     clearPixelateBrushMask()
-    ensurePixelateBrushCanvas()
-    scheduleApplyChanges()
+    ensurePixelateBrushCanvas(true)
+    if (pixelateBrushCommittedLoadPromise) {
+      await pixelateBrushCommittedLoadPromise
+    }
+    // No collage, obter a imagem composta do servidor ANTES de ativar showPixelateRegion.
+    // Quando showPixelateRegion=true, shouldHideDomImageOverlays=true esconde os overlays DOM
+    // e o editor passa a mostrar currentImageUrl como imagem composta. Se ainda não temos
+    // essa imagem composta, o canvas fica vazio (piscar).
+    if (isCollageComposition.value) {
+      // Snapshot temporário: ativar showPixelateRegion só para buildEditPayload funcionar
+      // correctamente, depois repor se o request falhar.
+      showPixelateRegion.value = true
+      await flushPreview()
+    } else {
+      showPixelateRegion.value = true
+      // Só enviar preview se já existir uma máscara (ex: bake de retângulo anterior).
+      const _ov = null
+      if (committedPixelateMask.value || _ov?.effects?.pixelate_mask) {
+        scheduleApplyChanges()
+      }
+    }
     syncMaskBrushHoverAfterModeEnter()
   } else {
     closeDrawingMenu()
@@ -10440,9 +11101,9 @@ const buildEditPayload = (options = {}) => {
     blur_brush:
       !collageEffectsOnOverlays &&
       resolveActiveBlurLevel() > 0 &&
+      blurShapeMode.value === 'brush' &&
       Boolean(
-        (showBlurRegion.value && blurShapeMode.value === 'brush') ||
-          committedBlurMask.value
+        blurMaskDirty.value
       ),
     blur_mask: collageEffectsOnOverlays ? null : resolveBlurMaskPayload(),
     blur_region: collageEffectsOnOverlays ? null : resolveBlurRegionPayload(),
@@ -10450,9 +11111,9 @@ const buildEditPayload = (options = {}) => {
     pixelate_brush:
       !collageEffectsOnOverlays &&
       resolveActivePixelateLevel() > 0 &&
+      pixelateShapeMode.value === 'brush' &&
       Boolean(
-        (showPixelateRegion.value && pixelateShapeMode.value === 'brush') ||
-          committedPixelateMask.value
+        pixelateMaskDirty.value
       ),
     pixelate_mask: collageEffectsOnOverlays ? null : resolvePixelateMaskPayload(),
     pixelate_region: collageEffectsOnOverlays ? null : resolvePixelateRegionPayload(),
@@ -10509,7 +11170,13 @@ const applyChanges = async (options = {}) => {
       const newUrl = response.data.image_data
       if (options.commitGeometryPreview) {
         await finalizeGeometryPreviewUrl(newUrl)
-      } else if (!blankCanvasUsesDomOverlays.value || shouldHideDomImageOverlays.value) {
+      } else if (
+        !blankCanvasUsesDomOverlays.value ||
+        shouldHideDomImageOverlays.value ||
+        // Enquanto o tool de efeito local está activo, precisamos de actualizar
+        // a imagem composta do servidor mesmo antes de esconder os overlays DOM.
+        isEffectRegionToolActive.value
+      ) {
         currentImageUrl.value = newUrl
       }
       if (isBlankCanvas.value && props.photo?.filename && typeof newUrl === 'string' && newUrl !== '') {
@@ -10835,7 +11502,8 @@ watch(selectedOverlayId, (nextId, prevId) => {
     isCollageComposition.value &&
     prevId &&
     prevId !== nextId &&
-    (resolveActiveBlurLevel() > 0 || resolveActivePixelateLevel() > 0)
+    (resolveActiveBlurLevel() > 0 || resolveActivePixelateLevel() > 0) &&
+    !isMaskBrushModeActive.value
   ) {
     if (!effectRectDraw.value) {
       persistLiveEffectsToOverlay(prevId)

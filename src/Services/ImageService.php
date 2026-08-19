@@ -634,6 +634,8 @@ class ImageService
         $minY = $ih;
         $maxX = -1;
         $maxY = -1;
+        // Scan inicial com passo maior (mais rápido).
+        // Em máscaras muito esparsas (brush fino/rápido), pode não encontrar pixels activos.
         for ($y = 0; $y < $ih; $y += 3) {
             for ($x = 0; $x < $iw; $x += 3) {
                 $rgb = @imagecolorat($maskGd, $x, $y);
@@ -645,6 +647,29 @@ class ImageService
                     $minY = min($minY, $y);
                     $maxX = max($maxX, $x);
                     $maxY = max($maxY, $y);
+                }
+            }
+        }
+
+        // Fallback: se não achou nenhum pixel activo, faz scan completo (step 1).
+        // Isto garante que traços pequenos ainda resultem em efeito.
+        if ($maxX < 0) {
+            $minX = $iw;
+            $minY = $ih;
+            $maxX = -1;
+            $maxY = -1;
+            for ($y = 0; $y < $ih; $y += 1) {
+                for ($x = 0; $x < $iw; $x += 1) {
+                    $rgb = @imagecolorat($maskGd, $x, $y);
+                    if ($rgb === false) {
+                        continue;
+                    }
+                    if ($this->maskPixelIsActive($rgb)) {
+                        $minX = min($minX, $x);
+                        $minY = min($minY, $y);
+                        $maxX = max($maxX, $x);
+                        $maxY = max($maxY, $y);
+                    }
                 }
             }
         }
