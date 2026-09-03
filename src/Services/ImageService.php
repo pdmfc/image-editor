@@ -444,7 +444,7 @@ class ImageService
             $this->applyBlurWithMask($image, $maskSrc, $strength);
         }
 
-        if ($blur <= 0) {
+        if ($blur <= 0 || $hasMask || $isBrush) {
             return;
         }
 
@@ -458,10 +458,6 @@ class ImageService
                 false
             );
 
-            return;
-        }
-
-        if ($hasMask || $isBrush) {
             return;
         }
 
@@ -500,7 +496,7 @@ class ImageService
             $this->applyPixelateWithMask($image, $maskSrc, $tile);
         }
 
-        if ($level <= 0) {
+        if ($level <= 0 || $hasMask || $isBrush) {
             return;
         }
 
@@ -516,10 +512,6 @@ class ImageService
                 false
             );
 
-            return;
-        }
-
-        if ($hasMask || $isBrush) {
             return;
         }
 

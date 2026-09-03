@@ -904,10 +904,10 @@
         </div>
         </div>
         </div>
-        <!-- Camada de captura para borracha de desfoque/pixelização (por cima das imagens arrastadas) -->
+        <!-- Camada de captura para borracha de desfoque/pixelização (só sobre a imagem) -->
         <div
           v-if="isMaskBrushModeActive"
-          class="absolute inset-0 z-[36] touch-none"
+          class="absolute z-[36] touch-none"
           :style="maskBrushCaptureLayerStyle"
           @mousedown="onMaskBrushSurfaceMouseDown"
           @pointermove="onMaskBrushSurfacePointerMove"
@@ -1010,7 +1010,7 @@
       </button>
 
       <!-- Controles de Edição (z-index acima da zona de desfoque para o slider funcionar) -->
-      <div 
+      <div
         class="absolute bottom-0 left-0 right-0 z-40 p-4 bg-black bg-opacity-50 transition-transform duration-300"
         :class="{'translate-y-full': !showControls && !activeControl && !drawingTool && !showDrawingMenu && !showPixelateMenu && !showBlurMenu && !showFilterMenu && !areaStampMode && !areaClipboard}"
       >
@@ -1089,8 +1089,7 @@
               @click="toggleBlurMenu"
               class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
               :class="{
-                'bg-purple-600': showBlurRegion || committedBlurRegion || committedBlurMask || blurApplyGlobal,
-                'bg-blue-500': activeControl === 'blur' && !showBlurRegion && !committedBlurRegion && !committedBlurMask && !blurApplyGlobal,
+                'bg-purple-600': activeControl === 'blur' || showBlurRegion,
                 'ring-2 ring-purple-200/60': showBlurMenu
               }"
             >
@@ -1098,40 +1097,6 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
               </svg>
             </button>
-            <div
-              v-show="showBlurMenu"
-              class="absolute bottom-full left-1/2 z-[55] mb-2 w-[min(100vw-2rem,18rem)] ml-[calc(min(100vw-2rem,18rem)/-2)] rounded-2xl border border-white/15 bg-black/90 px-3 py-3 shadow-2xl backdrop-blur-sm"
-              role="menu"
-              @click.stop
-            >
-              <p class="mb-2 text-center text-[11px] text-white/70">Tipo de desfoque</p>
-              <div class="flex flex-col gap-2">
-                <button
-                  type="button"
-                  title="Ajustar retângulo na foto; intensidade no slider em baixo"
-                  class="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-left text-sm text-white transition hover:bg-white/15"
-                  @click="selectBlurRectangle"
-                >
-                  Só numa zona (retângulo)
-                </button>
-                <button
-                  type="button"
-                  title="Borracha — arrastar na foto com o botão premido; intensidade no slider"
-                  class="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-left text-sm text-white transition hover:bg-white/15"
-                  @click="selectBlurBrush"
-                >
-                  Área livre (borracha)
-                </button>
-                <button
-                  type="button"
-                  title="Desfocar a imagem toda — use o slider em baixo"
-                  class="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-left text-sm text-white transition hover:bg-white/15"
-                  @click="selectBlurGlobal"
-                >
-                  Toda a imagem
-                </button>
-              </div>
-            </div>
           </div>
 
           <div class="relative">
@@ -1141,8 +1106,7 @@
               @click="togglePixelateMenu"
               class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
               :class="{
-                'bg-amber-600': showPixelateRegion || committedPixelateRegion || committedPixelateMask || pixelateApplyGlobal,
-                'bg-blue-500': activeControl === 'pixelate' && !showPixelateRegion && !committedPixelateRegion && !committedPixelateMask && !pixelateApplyGlobal,
+                'bg-amber-600': activeControl === 'pixelate' || showPixelateRegion,
                 'ring-2 ring-amber-200/60': showPixelateMenu
               }"
             >
@@ -1150,40 +1114,6 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4h4v4H4V4zm6 0h4v4h-4V4zm6 0h4v4h-4V4zM4 10h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4zM4 16h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4z" />
               </svg>
             </button>
-            <div
-              v-show="showPixelateMenu"
-              class="absolute bottom-full left-1/2 z-[55] mb-2 w-[min(100vw-2rem,18rem)] ml-[calc(min(100vw-2rem,18rem)/-2)] rounded-2xl border border-white/15 bg-black/90 px-3 py-3 shadow-2xl backdrop-blur-sm"
-              role="menu"
-              @click.stop
-            >
-              <p class="mb-2 text-center text-[11px] text-white/70">Tipo de pixelização</p>
-              <div class="flex flex-col gap-2">
-                <button
-                  type="button"
-                  title="Ajustar retângulo na foto; intensidade no slider em baixo"
-                  class="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-left text-sm text-white transition hover:bg-white/15"
-                  @click="selectPixelateRectangle"
-                >
-                  Só numa zona (retângulo)
-                </button>
-                <button
-                  type="button"
-                  title="Borracha — arrastar na foto com o botão premido; intensidade no slider"
-                  class="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-left text-sm text-white transition hover:bg-white/15"
-                  @click="selectPixelateBrush"
-                >
-                  Área livre (borracha)
-                </button>
-                <button
-                  type="button"
-                  title="Pixelizar a imagem toda — tamanho do bloco no slider"
-                  class="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-left text-sm text-white transition hover:bg-white/15"
-                  @click="selectPixelateGlobal"
-                >
-                  Toda a imagem
-                </button>
-              </div>
-            </div>
           </div>
 
           <!-- Botão de Brilho -->
@@ -1433,7 +1363,7 @@
             title="Marca de água — texto ou logótipo no canto"
             @click="toggleControl('watermark')"
             class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
-            :class="{ 'bg-blue-500': activeControl === 'watermark' || watermarkApplied }"
+            :class="{ 'bg-blue-500': activeControl === 'watermark' }"
           >
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
@@ -1478,30 +1408,229 @@
               </button>
             </div>
           </div>
-          <input
-            ref="watermarkImageInputRef"
-            type="file"
-            accept="image/*"
-            class="hidden"
-            @change="onWatermarkImageInput"
-          />
+        </div>
+
+        <!-- Menus de tipo blur/pixelize — acima de toda a barra (ícones ou sliders) -->
+        <div
+          v-show="showBlurMenu"
+          class="pointer-events-auto absolute bottom-full left-1/2 z-[55] mb-2 w-[min(100vw-2rem,18rem)] -translate-x-1/2 rounded-2xl border border-white/15 bg-black/90 px-3 py-3 shadow-2xl backdrop-blur-sm"
+          role="menu"
+          @click.stop
+        >
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <p class="text-center text-[11px] text-white/70">Tipo de desfoque</p>
+            <button
+              type="button"
+              title="Fechar"
+              class="rounded-full p-0.5 text-white/60 hover:bg-white/15 hover:text-white"
+              @click="showBlurMenu = false"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex flex-col gap-2">
+            <button
+              type="button"
+              title="Ajustar retângulo na foto; intensidade no slider em baixo"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="showBlurRegion && blurShapeMode === 'rectangle' ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectBlurRectangle"
+            >
+              Só numa zona (retângulo)
+            </button>
+            <button
+              type="button"
+              title="Borracha — arrastar na foto com o botão premido; intensidade no slider"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="showBlurRegion && blurShapeMode === 'brush' ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectBlurBrush"
+            >
+              Área livre (borracha)
+            </button>
+            <button
+              type="button"
+              title="Desfocar a imagem toda — use o slider em baixo"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="blurApplyGlobal ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectBlurGlobal"
+            >
+              Toda a imagem
+            </button>
+          </div>
+        </div>
+        <div
+          v-show="showPixelateMenu"
+          class="pointer-events-auto absolute bottom-full left-1/2 z-[55] mb-2 w-[min(100vw-2rem,18rem)] -translate-x-1/2 rounded-2xl border border-white/15 bg-black/90 px-3 py-3 shadow-2xl backdrop-blur-sm"
+          role="menu"
+          @click.stop
+        >
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <p class="text-center text-[11px] text-white/70">Tipo de pixelização</p>
+            <button
+              type="button"
+              title="Fechar"
+              class="rounded-full p-0.5 text-white/60 hover:bg-white/15 hover:text-white"
+              @click="showPixelateMenu = false"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex flex-col gap-2">
+            <button
+              type="button"
+              title="Ajustar retângulo na foto; intensidade no slider em baixo"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="showPixelateRegion && pixelateShapeMode === 'rectangle' ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectPixelateRectangle"
+            >
+              Só numa zona (retângulo)
+            </button>
+            <button
+              type="button"
+              title="Borracha — arrastar na foto com o botão premido; intensidade no slider"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="showPixelateRegion && pixelateShapeMode === 'brush' ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectPixelateBrush"
+            >
+              Área livre (borracha)
+            </button>
+            <button
+              type="button"
+              title="Pixelizar a imagem toda — tamanho do bloco no slider"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="pixelateApplyGlobal ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectPixelateGlobal"
+            >
+              Toda a imagem
+            </button>
+          </div>
+        </div>
+
+        <!-- Input de ficheiro sempre no DOM (o painel de marca de água usa activeControl !== null). -->
+        <input
+          ref="watermarkImageInputRef"
+          type="file"
+          accept="image/*"
+          class="sr-only"
+          tabindex="-1"
+          aria-hidden="true"
+          @change="onWatermarkImageInput"
+        />
+
+        <!-- Chip compacto: pincel activo com painel fechado (para desenhar na base da foto) -->
+        <div
+          v-if="showMaskBrushCollapsedChip"
+          class="flex justify-center"
+        >
+          <div
+            class="flex max-w-[min(100vw-2rem,28rem)] flex-wrap items-center justify-center gap-2 rounded-2xl border border-white/20 bg-black/90 px-3 py-2 shadow-xl backdrop-blur-sm"
+            :class="activeControl === 'pixelate' ? 'ring-1 ring-amber-400/40' : 'ring-1 ring-purple-400/40'"
+          >
+            <span class="text-xs font-medium text-white">{{ maskBrushCollapsedLabel }}</span>
+            <span class="text-[11px] text-white/55">raio {{ effectiveMaskBrushRadius }} px</span>
+            <span
+              v-if="maskBrushEraseMode"
+              class="rounded-full bg-white/15 px-2 py-0.5 text-[10px] text-white/80"
+            >Borracha</span>
+            <button
+              type="button"
+              class="rounded-lg bg-white/15 px-2.5 py-1 text-xs text-white hover:bg-white/25"
+              title="Reabrir intensidade e tamanho do pincel"
+              @click="expandMaskBrushPanel"
+            >
+              Ajustes
+            </button>
+            <button
+              v-if="activeControl === 'blur'"
+              type="button"
+              class="rounded-lg bg-white/10 p-1 text-white/80 hover:bg-white/20"
+              title="Tipo de desfoque"
+              @click="reopenMaskBrushTypeMenu('blur')"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+              </svg>
+            </button>
+            <button
+              v-else-if="activeControl === 'pixelate'"
+              type="button"
+              class="rounded-lg bg-white/10 p-1 text-white/80 hover:bg-white/20"
+              title="Tipo de pixelização"
+              @click="reopenMaskBrushTypeMenu('pixelate')"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="rounded-lg bg-white/10 p-1 text-white/80 hover:bg-white/20"
+              title="Fechar ferramenta"
+              @click="closeActiveControlPanel"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- Controle Ativo -->
-        <div v-if="activeControl" class="absolute bottom-0 left-0 right-0 z-40 p-4 bg-black bg-opacity-50">
+        <div v-else-if="activeControl" class="w-full">
           <div class="flex flex-col items-center">
             <div class="flex items-center justify-between w-full max-w-xs">
               <label class="text-white text-sm">{{ activeControl === 'gamma' ? 'Curva e gama' : getControlLabel(activeControl) }}:</label>
-              <button
-                type="button"
-                title="Fechar este controlo"
-                @click="closeActiveControlPanel"
-                class="p-1 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30"
-              >
-                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div class="flex items-center gap-1">
+                <button
+                  v-if="showMaskBrushSizeControl"
+                  type="button"
+                  title="Minimizar painel para desenhar na base da imagem"
+                  class="rounded-full p-1 bg-white/15 hover:bg-white/25"
+                  @click="collapseMaskBrushPanel"
+                >
+                  <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  v-if="activeControl === 'blur'"
+                  type="button"
+                  title="Tipo de desfoque (retângulo, borracha, global)"
+                  class="rounded-full p-1 bg-white/15 hover:bg-white/25"
+                  :class="{ 'ring-2 ring-purple-200/60': showBlurMenu }"
+                  @click="toggleBlurMenu"
+                >
+                  <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                </button>
+                <button
+                  v-if="activeControl === 'pixelate'"
+                  type="button"
+                  title="Tipo de pixelização (retângulo, borracha, global)"
+                  class="rounded-full p-1 bg-white/15 hover:bg-white/25"
+                  :class="{ 'ring-2 ring-amber-200/60': showPixelateMenu }"
+                  @click="togglePixelateMenu"
+                >
+                  <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  title="Fechar este controlo"
+                  @click="closeActiveControlPanel"
+                  class="p-1 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30"
+                >
+                  <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
             
             <!-- Controles de Texto -->
@@ -2826,27 +2955,71 @@ const showMaskBrushSizeControl = computed(
       pixelateShapeMode.value === 'brush')
 )
 
+/** Painel de blur/pixelize pincel colapsado enquanto se desenha (liberta a base da foto). */
+const maskBrushPanelCollapsed = ref(false)
+
+const showMaskBrushCollapsedChip = computed(
+  () => maskBrushPanelCollapsed.value && showMaskBrushSizeControl.value
+)
+
+const maskBrushCollapsedLabel = computed(() => {
+  if (activeControl.value === 'pixelate') {
+    return 'Pixelização · área livre'
+  }
+  return 'Desfoque · área livre'
+})
+
+const collapseMaskBrushPanel = () => {
+  if (showMaskBrushSizeControl.value) {
+    maskBrushPanelCollapsed.value = true
+    showBlurMenu.value = false
+    showPixelateMenu.value = false
+  }
+}
+
+const expandMaskBrushPanel = () => {
+  maskBrushPanelCollapsed.value = false
+}
+
+const reopenMaskBrushTypeMenu = (kind) => {
+  expandMaskBrushPanel()
+  nextTick(() => {
+    if (kind === 'blur') {
+      if (!showBlurMenu.value) {
+        toggleBlurMenu()
+      }
+    } else if (kind === 'pixelate') {
+      if (!showPixelateMenu.value) {
+        togglePixelateMenu()
+      }
+    }
+  })
+}
+
 const showControls = ref(true)
 
-/** Margem inferior fixa para a barra de ferramentas — não muda com legendas. */
+/** Margem inferior fixa enquanto a barra está visível — a imagem não redimensiona
+ *  ao abrir/fechar o painel de pincel (o menu sobrepõe-se). */
 const viewportChromeBottomPx = computed(() => {
   if (
-    showControls.value ||
-    activeControl.value ||
-    showDrawingMenu.value ||
-    drawingTool.value ||
-    showPixelateMenu.value ||
-    showBlurMenu.value ||
-    showFilterMenu.value ||
-    areaStampMode.value ||
-    areaClipboard.value ||
-    showCrop.value ||
-    showBlurRegion.value ||
-    showPixelateRegion.value
+    !(
+      showControls.value ||
+      activeControl.value ||
+      showDrawingMenu.value ||
+      drawingTool.value ||
+      showPixelateMenu.value ||
+      showBlurMenu.value ||
+      showFilterMenu.value ||
+      areaStampMode.value ||
+      areaClipboard.value ||
+      showCrop.value ||
+      showBlurRegion.value ||
+      showPixelateRegion.value
+    )
   ) {
-    return 96
+    return 0
   }
-  return 0
+  return 96
 })
 
 const viewportInsetStyle = computed(() => {
@@ -3732,6 +3905,7 @@ const maskBrushHoverRingStyle = computed(() => {
   } else if (erase) {
     fill = 'rgba(136, 136, 136, 0.42)'
   }
+  // Coordenadas locais à camada de captura (já posicionada em ox/oy).
   const { x, y } = maskBrushHoverPos.value
   return {
     left: `${x - rDisplay}px`,
@@ -3742,10 +3916,21 @@ const maskBrushHoverRingStyle = computed(() => {
   }
 })
 
-/** Esconde o cursor do SO só em cima da imagem (anel visível); fora mantém o ponteiro normal. */
-const maskBrushCaptureLayerStyle = computed(() => ({
-  cursor: maskBrushHoverPos.value.visible ? 'none' : 'default'
-}))
+/** Camada só sobre a imagem; cursor do SO escondido (anel DOM). */
+const maskBrushCaptureLayerStyle = computed(() => {
+  void imageNaturalVersion.value
+  const m = compositionDisplayMetrics.value
+  if (!m.imgW || !m.imgH) {
+    return { display: 'none' }
+  }
+  return {
+    left: `${m.ox}px`,
+    top: `${m.oy}px`,
+    width: `${m.imgW}px`,
+    height: `${m.imgH}px`,
+    cursor: 'none'
+  }
+})
 
 const updateMaskBrushHoverFromEvent = (e) => {
   if (!isMaskBrushModeActive.value || resizeDirection.value) {
@@ -3772,7 +3957,13 @@ const updateMaskBrushHoverFromEvent = (e) => {
     pos.x <= m.ox + m.imgW &&
     pos.y >= m.oy &&
     pos.y <= m.oy + m.imgH
-  maskBrushHoverPos.value = { x: pos.x, y: pos.y, visible: inside }
+  // Guardar coords relativas à captura (origem = canto da imagem), senão o anel
+  // soma ox/oy duas vezes e “salta” para o lado.
+  maskBrushHoverPos.value = {
+    x: pos.x - m.ox,
+    y: pos.y - m.oy,
+    visible: inside
+  }
 }
 
 const onMaskBrushSurfacePointerMove = (e) => {
@@ -3787,6 +3978,7 @@ watch(isMaskBrushModeActive, (active) => {
   } else {
     detachMaskBrushHoverTracker()
     maskBrushHoverPos.value = { x: 0, y: 0, visible: false }
+    maskBrushPanelCollapsed.value = false
   }
 })
 
@@ -4049,11 +4241,10 @@ const stopPixelateBrushStroke = () => {
     committedPixelateMaskCanvasCache = collageBrushFullMask
   }
   ensurePixelateEffectStrength()
-  // Em collage, garantir persistência do mask do traço no overlay actual.
-  // Senão, ao trocar para outro overlay (ou ao adicionar novo overlay),
-  // o overlay anterior pode perder o pixelate quando voltas.
+  // Persistir máscara após cada traço (imagem simples e collage).
+  commitPixelateBrushMaskIfDirty()
   if (isCollageComposition.value && selectedOverlayId.value) {
-    commitPixelateBrushMaskIfDirty()
+    persistLiveEffectsToOverlay(selectedOverlayId.value)
   }
   flushPreview()
 }
@@ -4062,6 +4253,7 @@ const startPixelateBrushStroke = async (e) => {
   if (!showPixelateRegion.value || pixelateShapeMode.value !== 'brush' || resizeDirection.value) {
     return
   }
+  collapseMaskBrushPanel()
   // Em collage, permitir pixelizar qualquer overlay:
   // se o utilizador começar um traço em cima de outra imagem,
   // auto-seleccionamos essa overlay e restauramos o pixelate_mask.
@@ -4130,9 +4322,8 @@ const startPixelateBrushStroke = async (e) => {
       }
     }
   }
-  // Garantir que qualquer pixelização por retângulo confirmada
-  // esteja baked na máscara antes do primeiro traço da borracha.
-  if (!pixelateMaskDirty.value) {
+  // Só fazer bake de retângulos já confirmados — não o placeholder por defeito da UI.
+  if (!pixelateMaskDirty.value && committedPixelateRegion.value) {
     await commitLiveRectangleIntoAccumulatedMask('pixelate')
   }
   // Só recarregamos o "committed" quando ainda não há mudanças no canvas.
@@ -4608,10 +4799,13 @@ const stopBlurBrushStroke = () => {
   window.removeEventListener('touchmove', handleBlurBrushMove, { passive: false })
   window.removeEventListener('touchend', stopBlurBrushStroke)
   clearBlurBrushPreviewDebounce()
+  if (blurBrushCanvas) {
+    committedBlurMaskCanvasCache = cloneMaskCanvas(blurBrushCanvas)
+  }
   ensureBlurEffectStrength()
-  // Em collage, persistir o blur_mask do traço no overlay actual.
+  // Persistir máscara após cada traço (imagem simples e collage).
+  commitBlurBrushMaskIfDirty()
   if (isCollageComposition.value && selectedOverlayId.value) {
-    commitBlurBrushMaskIfDirty()
     persistLiveEffectsToOverlay(selectedOverlayId.value)
   }
   flushPreview()
@@ -4621,6 +4815,7 @@ const startBlurBrushStroke = async (e) => {
   if (!showBlurRegion.value || blurShapeMode.value !== 'brush' || resizeDirection.value) {
     return
   }
+  collapseMaskBrushPanel()
   // Em collage, permitir blur em qualquer overlay por baixo do cursor.
   if (isCollageComposition.value) {
     const { x, y } = clientToImgLocal(e)
@@ -4764,10 +4959,12 @@ const onImageLoad = () => {
   syncImageNaturalMetrics()
   nextTick(() => ensureImageLayoutObserver())
   if (showPixelateRegion.value && pixelateShapeMode.value === 'brush') {
-    ensurePixelateBrushCanvas(true)
+    // Se há traços por enviar, não recarregar a máscara committed — senão
+    // perdemos o acumulado ao fazer o 2º traço (reload do preview).
+    ensurePixelateBrushCanvas(!pixelateMaskDirty.value)
   }
   if (showBlurRegion.value && blurShapeMode.value === 'brush') {
-    ensureBlurBrushCanvas(true)
+    ensureBlurBrushCanvas(!blurMaskDirty.value)
   }
   const el = imageRef.value
   if (!el?.naturalWidth) {
@@ -5920,8 +6117,7 @@ const transformCollageCanvasContentRotate90Ccw = async () => {
           width: next.width,
           height: next.height,
           src: await transformOverlayDataUrl(ov.src, { rotate90Ccw: true }),
-          effects: await transformStoredOverlayEffects(ov.effects, ov, { rotate90Ccw: true }),
-          captionAngle: ((Number(ov.captionAngle) || 0) + 90) % 360
+          effects: await transformStoredOverlayEffects(ov.effects, ov, { rotate90Ccw: true })
         }
       })
     )
@@ -5948,8 +6144,7 @@ const transformCollageCanvasContentFlipHorizontal = async () => {
           x: next.x,
           y: next.y,
           src: await transformOverlayDataUrl(ov.src, { flipH: true }),
-          effects: await transformStoredOverlayEffects(ov.effects, ov, { flipH: true }),
-          captionAngle: (360 - (Number(ov.captionAngle) || 0)) % 360
+          effects: await transformStoredOverlayEffects(ov.effects, ov, { flipH: true })
         }
       })
     )
@@ -5974,8 +6169,7 @@ const transformCollageCanvasContentFlipVertical = async () => {
           x: next.x,
           y: next.y,
           src: await transformOverlayDataUrl(ov.src, { flipV: true }),
-          effects: await transformStoredOverlayEffects(ov.effects, ov, { flipV: true }),
-          captionAngle: (180 - (Number(ov.captionAngle) || 0) + 360) % 360
+          effects: await transformStoredOverlayEffects(ov.effects, ov, { flipV: true })
         }
       })
     )
@@ -6170,11 +6364,14 @@ const closeEffectOption = (kind) => {
         }
         stopBlurBrushStroke()
         stopBlurPan()
+        // Sair do modo pincel (senão o chip some mas continua a desenhar).
+        showBlurRegion.value = false
       }
       showBlurMenu.value = false
       if (activeControl.value === 'blur') {
         activeControl.value = null
       }
+      maskBrushPanelCollapsed.value = false
     } else {
       if (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle') {
         const natural = capturePixelateRegionFromDisplay()
@@ -6190,11 +6387,13 @@ const closeEffectOption = (kind) => {
         }
         stopPixelateBrushStroke()
         stopPixelatePan()
+        showPixelateRegion.value = false
       }
       showPixelateMenu.value = false
       if (activeControl.value === 'pixelate') {
         activeControl.value = null
       }
+      maskBrushPanelCollapsed.value = false
     }
     applyChanges()
     return
@@ -6509,8 +6708,7 @@ const rotateSelectedCollageOverlay = async () => {
     y: ny,
     width: nextW,
     height: nextH,
-    effects,
-    captionAngle: ((Number(ov.captionAngle) || 0) + 90) % 360
+    effects
   }
   imageOverlays.value = updated
   syncLiveCommittedRegionsFromOverlay(updated[idx])
@@ -7380,6 +7578,7 @@ const hasActiveBlurTarget = () =>
     blurApplyGlobal.value ||
     committedBlurRegion.value ||
     committedBlurMask.value ||
+    committedBlurMaskCanvasCache ||
     (blurShapeMode.value === 'brush' && blurMaskDirty.value) ||
     (showBlurRegion.value && blurShapeMode.value === 'rectangle')
   )
@@ -7389,28 +7588,32 @@ const hasActivePixelateTarget = () =>
     pixelateApplyGlobal.value ||
     committedPixelateRegion.value ||
     committedPixelateMask.value ||
+    committedPixelateMaskCanvasCache ||
     (pixelateShapeMode.value === 'brush' && pixelateMaskDirty.value) ||
     (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle')
   )
 
 const resolveBlurMaskPayload = () => {
-  if (resolveActiveBlurLevel() <= 0 || blurShapeMode.value !== 'brush') {
+  if (resolveActiveBlurLevel() <= 0) {
     return null
   }
-  if (blurMaskDirty.value) {
-    return exportBlurMaskDataUrl()
+  // Em imagem simples, após mudar de ferramenta o shapeMode volta a 'rectangle',
+  // mas a máscara confirmada tem de continuar a ser enviada (senão o servidor
+  // aplica blur em toda a imagem). No canvas isto não corre — overlays levam o efeito.
+  if (blurShapeMode.value === 'brush' && blurMaskDirty.value) {
+    return exportBlurMaskDataUrl() || committedBlurMask.value
   }
-  return committedBlurMask.value
+  return committedBlurMask.value || null
 }
 
 const resolvePixelateMaskPayload = () => {
-  if (resolveActivePixelateLevel() <= 0 || pixelateShapeMode.value !== 'brush') {
+  if (resolveActivePixelateLevel() <= 0) {
     return null
   }
-  if (pixelateMaskDirty.value) {
-    return exportPixelateMaskDataUrl()
+  if (pixelateShapeMode.value === 'brush' && pixelateMaskDirty.value) {
+    return exportPixelateMaskDataUrl() || committedPixelateMask.value
   }
-  return committedPixelateMask.value
+  return committedPixelateMask.value || null
 }
 
 const resolveActiveBlurLevel = () =>
@@ -7491,6 +7694,10 @@ const resolveBlurRegionPayload = () => {
   if (resolveActiveBlurLevel() <= 0 || blurApplyGlobal.value) {
     return null
   }
+  // Máscara (pincel) tem prioridade — nunca enviar região em paralelo.
+  if (blurShapeMode.value === 'brush' || committedBlurMask.value) {
+    return null
+  }
   if (showBlurRegion.value && blurShapeMode.value === 'rectangle') {
     return captureBlurRegionFromDisplay()
   }
@@ -7499,6 +7706,9 @@ const resolveBlurRegionPayload = () => {
 
 const resolvePixelateRegionPayload = () => {
   if (resolveActivePixelateLevel() <= 0 || pixelateApplyGlobal.value) {
+    return null
+  }
+  if (pixelateShapeMode.value === 'brush' || committedPixelateMask.value) {
     return null
   }
   if (showPixelateRegion.value && pixelateShapeMode.value === 'rectangle') {
@@ -8811,18 +9021,14 @@ const compositionExtraBottomNat = computed(() => {
     if (!ov.caption) {
       continue
     }
-    const angle = ((Number(ov.captionAngle) || 0) % 360 + 360) % 360
     const bandH = estimateCaptionBandHeightNat(
       ov.caption.number,
       ov.caption.description,
       ov.width,
       overlayCaptionHasBorder(ov)
     )
-    if (angle === 0) {
-      extra = Math.max(extra, ov.y + ov.height + bandH - nh)
-    } else if (angle === 180) {
-      extra = Math.max(extra, bandH - ov.y)
-    }
+    // Legenda sempre por baixo da imagem (horizontal), independentemente da rotação.
+    extra = Math.max(extra, ov.y + ov.height + bandH - nh)
   }
 
   return Math.max(0, Math.ceil(extra))
@@ -9021,24 +9227,19 @@ const overlayCaptionBandStyle = (ov) => {
   if (!ov?.caption) {
     return { display: 'none' }
   }
-  const angle = ((Number(ov.captionAngle) || 0) % 360 + 360) % 360
   const bandNat = estimateCaptionBandHeightNat(
     ov.caption.number,
     ov.caption.description,
     ov.width,
     overlayCaptionHasBorder(ov)
   )
-  const overlayDisp = naturalRectToDisplay(0, 0, ov.width, ov.height)
   const bandDisp = naturalRectToDisplay(0, 0, ov.width, bandNat)
   const bandH = Math.max(1, bandDisp.height)
-  const originX = Math.max(1, overlayDisp.width) / 2
   return {
     left: 0,
     top: '100%',
     width: '100%',
-    height: `${bandH}px`,
-    transformOrigin: `${originX}px 0`,
-    transform: angle ? `rotate(${angle}deg)` : 'none'
+    height: `${bandH}px`
   }
 }
 
@@ -9057,8 +9258,7 @@ const confirmOverlayCaption = () => {
       number: Math.max(1, Math.round(overlayCaptionDraft.value.number)),
       description: overlayCaptionDraft.value.description || ''
     },
-    captionBandBorderEnabled: Boolean(overlayCaptionDraft.value.bandBorderEnabled),
-    captionAngle: Number(updated[idx].captionAngle) || 0
+    captionBandBorderEnabled: Boolean(overlayCaptionDraft.value.bandBorderEnabled)
   }
   imageOverlays.value = updated
   recordEditHistory()
@@ -9428,7 +9628,7 @@ const mapImageOverlaysPayload = () =>
         number: Math.max(1, Math.round(caption.number || 1)),
         description: caption.description || ''
       }
-      item.caption_angle = ((Number(ov.captionAngle) || 0) % 360 + 360) % 360
+      item.caption_angle = 0
       item.caption_band_border = overlayCaptionHasBorder(ov)
     }
     return item
@@ -10467,6 +10667,13 @@ const togglePixelateMenu = () => {
     showPixelateMenu.value = false
     return
   }
+  // Em modo pixelização activo, abrir menu de tipos sem fechar o efeito.
+  if (activeControl.value === 'pixelate' && showPixelateRegion.value) {
+    showPixelateMenu.value = true
+    showDrawingMenu.value = false
+    showBlurMenu.value = false
+    return
+  }
   if (activeControl.value === 'pixelate' || showPixelateRegion.value) {
     closePixelateOption()
     return
@@ -10480,6 +10687,13 @@ const togglePixelateMenu = () => {
 const toggleBlurMenu = () => {
   if (showBlurMenu.value) {
     showBlurMenu.value = false
+    return
+  }
+  // Em modo desfoque activo, abrir menu de tipos sem fechar o efeito.
+  if (activeControl.value === 'blur' && showBlurRegion.value) {
+    showBlurMenu.value = true
+    showDrawingMenu.value = false
+    showPixelateMenu.value = false
     return
   }
   if (activeControl.value === 'blur' || showBlurRegion.value) {
@@ -10512,6 +10726,7 @@ const selectBlurRectangle = () => {
 const selectBlurGlobal = () => {
   ensureBlurEffectStrength()
   closeDrawingMenu()
+  showBlurMenu.value = false
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
@@ -10533,12 +10748,16 @@ const selectBlurBrush = async () => {
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
+  showBlurMenu.value = false
   if (!showBlurRegion.value || blurShapeMode.value !== 'brush') {
     ensureBlurEffectStrength()
     prepareSwitchFromPixelateTool()
-    // Fazer bake de região acumulada na máscara antes de mudar para borracha
-    await commitLiveRectangleIntoAccumulatedMask('blur')
-    // Só limpamos a região se a máscara tiver sido realmente criada.
+    // Só fazer bake de retângulos já confirmados — não o placeholder por defeito da UI.
+    if (isCollageComposition.value && selectedOverlayId.value) {
+      await bakeStoredOverlayRegionIntoMask(selectedOverlayId.value, 'blur')
+    } else if (committedBlurRegion.value) {
+      await commitLiveRectangleIntoAccumulatedMask('blur')
+    }
     if (committedBlurMask.value) {
       committedBlurRegion.value = null
     }
@@ -10547,6 +10766,10 @@ const selectBlurBrush = async () => {
     showBlurRegion.value = true
     activeControl.value = 'blur'
     stopBlurPan()
+    if (!isCollageComposition.value && committedBlurMask.value && !committedBlurMaskCanvasCache) {
+      await ensureBlurBrushCanvas(false)
+      await loadCommittedMaskCacheFromDataUrl(committedBlurMask.value, 'blur')
+    }
     // Em collage, ao reabrir o menu do blur brush, restaurar o blur_mask persistido
     // do overlay seleccionado para não parecer que deu reset.
     if (isCollageComposition.value && selectedOverlayId.value && !committedBlurMask.value) {
@@ -10625,6 +10848,7 @@ const selectPixelateBrush = async () => {
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
+  showPixelateMenu.value = false
   if (!showPixelateRegion.value || pixelateShapeMode.value !== 'brush') {
     // Cancelar qualquer preview pendente/em-flight — se a resposta antiga chegar
     // ao servidor com estado anterior (rectangle/sem efeito) após mudarmos para brush,
@@ -10635,15 +10859,12 @@ const selectPixelateBrush = async () => {
     previewPendingOptions = null
     ensurePixelateEffectStrength()
     prepareSwitchFromBlurTool()
-    // Fazer bake dos retângulos confirmados na máscara antes de entrar na borracha.
-    // No canvas (collage), o rect está guardado em ov.effects.pixelate_region (coords overlay).
-    // Fora do canvas (imagem simples), está em committedPixelateRegion (coords naturais).
+    // Só fazer bake de retângulos já confirmados — não o placeholder por defeito da UI.
     if (isCollageComposition.value && selectedOverlayId.value) {
       await bakeStoredOverlayRegionIntoMask(selectedOverlayId.value, 'pixelate')
-    } else {
+    } else if (committedPixelateRegion.value) {
       await commitLiveRectangleIntoAccumulatedMask('pixelate')
     }
-    // Só limpamos a região se a máscara realmente estiver pronta.
     if (committedPixelateMask.value) {
       committedPixelateRegion.value = null
     }
@@ -10651,6 +10872,10 @@ const selectPixelateBrush = async () => {
     pixelateShapeMode.value = 'brush'
     activeControl.value = 'pixelate'
     stopPixelatePan()
+    if (!isCollageComposition.value && committedPixelateMask.value && !committedPixelateMaskCanvasCache) {
+      await ensurePixelateBrushCanvas(false)
+      await loadCommittedMaskCacheFromDataUrl(committedPixelateMask.value, 'pixelate')
+    }
     // Em collage, ao reabrir o menu do brush, pode acontecer que caches do
     // canvas tenham sido limpas no close. Restaura então a máscara persistida
     // no overlay seleccionado (pixelate_mask) para o brush conseguir renderizar
@@ -10736,6 +10961,7 @@ const selectPixelateBrush = async () => {
 const selectPixelateGlobal = () => {
   ensurePixelateEffectStrength()
   closeDrawingMenu()
+  showPixelateMenu.value = false
   drawingTool.value = null
   pathDraftPoints.value = []
   drawDrag.value = null
@@ -11101,9 +11327,9 @@ const buildEditPayload = (options = {}) => {
     blur_brush:
       !collageEffectsOnOverlays &&
       resolveActiveBlurLevel() > 0 &&
-      blurShapeMode.value === 'brush' &&
       Boolean(
-        blurMaskDirty.value
+        committedBlurMask.value ||
+          (blurShapeMode.value === 'brush' && blurMaskDirty.value)
       ),
     blur_mask: collageEffectsOnOverlays ? null : resolveBlurMaskPayload(),
     blur_region: collageEffectsOnOverlays ? null : resolveBlurRegionPayload(),
@@ -11111,9 +11337,9 @@ const buildEditPayload = (options = {}) => {
     pixelate_brush:
       !collageEffectsOnOverlays &&
       resolveActivePixelateLevel() > 0 &&
-      pixelateShapeMode.value === 'brush' &&
       Boolean(
-        pixelateMaskDirty.value
+        committedPixelateMask.value ||
+          (pixelateShapeMode.value === 'brush' && pixelateMaskDirty.value)
       ),
     pixelate_mask: collageEffectsOnOverlays ? null : resolvePixelateMaskPayload(),
     pixelate_region: collageEffectsOnOverlays ? null : resolvePixelateRegionPayload(),
