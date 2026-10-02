@@ -902,6 +902,26 @@
             @touchstart.stop.prevent="startDrawingMove($event, box.index)"
           />
         </div>
+        <!-- Marca de água em DOM na folha com overlays (o /preview só actualiza a miniatura) -->
+        <div
+          v-if="showLiveWatermarkOverlay"
+          class="pointer-events-none absolute z-[29] overflow-hidden"
+          :style="liveWatermarkFrameStyle"
+        >
+          <img
+            v-if="liveWatermarkIsImage"
+            :src="watermarkApplied.src"
+            alt=""
+            draggable="false"
+            class="absolute max-h-none"
+            :style="liveWatermarkItemStyle"
+          />
+          <span
+            v-else
+            class="absolute whitespace-pre leading-none"
+            :style="liveWatermarkItemStyle"
+          >{{ liveWatermarkText }}</span>
+        </div>
         </div>
         </div>
         <!-- Camada de captura para borracha de desfoque/pixelização (só sobre a imagem) -->
@@ -7801,6 +7821,14 @@ const blankCanvasUsesDomOverlays = computed(
     !collageOverlayGhostMove.value
 )
 
+/** DOM watermark while blank-canvas collage skips updating currentImageUrl (thumb still bakes). */
+const showLiveWatermarkOverlay = computed(
+  () =>
+    Boolean(watermarkApplied.value) &&
+    !showingOriginal.value &&
+    blankCanvasUsesDomOverlays.value
+)
+
 /** Oculta overlays DOM só durante edição activa de desfoque/pixelização. */
 const collageCompositeReady = computed(
   // A imagem composta do servidor é base64 (muito longa). A URL original é curta (~69 chars).
@@ -9260,6 +9288,95 @@ const compositionImageStyle = computed(() => {
     width: `${m.imgW}px`,
     height: `${m.imgH}px`,
     objectFit: 'contain'
+  }
+})
+
+const liveWatermarkFrameStyle = computed(() => {
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  const m = compositionDisplayMetrics.value
+  if (!m.imgW) {
+    return { display: 'none' }
+  }
+  return {
+    left: `${m.ox}px`,
+    top: `${m.oy}px`,
+    width: `${m.imgW}px`,
+    height: `${m.imgH}px`
+  }
+})
+
+const liveWatermarkIsImage = computed(
+  () => watermarkApplied.value?.type === 'image' && Boolean(watermarkApplied.value?.src)
+)
+
+const liveWatermarkText = computed(() => {
+  if (!watermarkApplied.value || watermarkApplied.value.type === 'image') {
+    return ''
+  }
+  return resolveWatermarkText(watermarkApplied.value)
+})
+
+const liveWatermarkItemStyle = computed(() => {
+  void imageNaturalVersion.value
+  void compositionExtraBottomNat.value
+  const w = watermarkApplied.value
+  if (!w) {
+    return { display: 'none' }
+  }
+
+  const m = compositionDisplayMetrics.value
+  const el = imageRef.value
+  const nw = el?.naturalWidth || 0
+  const nh = el?.naturalHeight || 0
+  const scale = m.scale || 1
+  const marginNat = Math.max(0, Math.min(200, Number(w.margin) || 16))
+  const margin = Math.max(0, Math.round(marginNat * scale))
+  const opacity = Math.max(0.05, Math.min(1, (Number(w.opacity) || 45) / 100))
+  const position = w.position || 'bottom-right'
+
+  const pos = {}
+  if (position === 'center') {
+    pos.top = '50%'
+    pos.left = '50%'
+    pos.transform = 'translate(-50%, -50%)'
+  } else {
+    if (position.includes('top')) {
+      pos.top = `${margin}px`
+    } else {
+      pos.bottom = `${margin}px`
+    }
+    if (position.includes('left')) {
+      pos.left = `${margin}px`
+    } else {
+      pos.right = `${margin}px`
+    }
+  }
+
+  if (w.type === 'image') {
+    const scalePct = Math.max(5, Math.min(60, Number(w.imageScale) || 18))
+    return {
+      ...pos,
+      width: `${scalePct}%`,
+      height: 'auto',
+      opacity,
+      objectFit: 'contain'
+    }
+  }
+
+  const sizePct = Math.max(2, Math.min(25, Number(w.size) || 4))
+  const minDim = Math.min(nw || m.imgW / scale, nh || m.imgH / scale)
+  const fontNat = Math.max(10, minDim * (sizePct / 100))
+  const fontPx = Math.max(8, Math.round(fontNat * scale))
+
+  return {
+    ...pos,
+    fontSize: `${fontPx}px`,
+    color: w.color || '#ffffff',
+    opacity,
+    fontWeight: '400',
+    lineHeight: 1.15,
+    maxWidth: `calc(100% - ${margin * 2}px)`
   }
 })
 

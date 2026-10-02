@@ -758,15 +758,6 @@ class ImageService
         $sizePct = max(2, min(25, (int) ($wm['size'] ?? 4)));
         $minDim = min($image->width(), $image->height());
         $fontPx = max(10.0, $minDim * ($sizePct / 100.0));
-        $box = $this->estimateTextBox($content, $fontPx);
-        [$x, $y] = $this->watermarkBoxOrigin(
-            $image->width(),
-            $image->height(),
-            $box['width'],
-            $box['height'],
-            $position,
-            $margin
-        );
 
         $textPayload = [
             'content' => $content,
@@ -774,6 +765,21 @@ class ImageService
             'color' => $this->colorWithOpacity((string) ($wm['color'] ?? '#ffffff'), $opacityPct),
             'align' => 'left',
         ];
+
+        // Use the same TTF metrics as rendering — the heuristic estimate under-sizes
+        // the box and clips watermarks on the right / bottom edges.
+        $box = $this->measureTextBlockBox($content, $textPayload, $image);
+        $boxW = max(1, $box['width'] + 2);
+        $boxH = max(1, $box['height'] + 2);
+
+        [$x, $y] = $this->watermarkBoxOrigin(
+            $image->width(),
+            $image->height(),
+            $boxW,
+            $boxH,
+            $position,
+            $margin
+        );
 
         $image->text(
             $content,
@@ -819,6 +825,9 @@ class ImageService
         } catch (\Throwable) {
             return;
         }
+
+        $tw = max(1, $overlay->width());
+        $th = max(1, $overlay->height());
 
         [$x, $y] = $this->watermarkBoxOrigin(
             $image->width(),
