@@ -1012,7 +1012,7 @@
       <!-- Controles de Edição (z-index acima da zona de desfoque para o slider funcionar) -->
       <div
         class="absolute bottom-0 left-0 right-0 z-40 p-4 bg-black bg-opacity-50 transition-transform duration-300"
-        :class="{'translate-y-full': !showControls && !activeControl && !drawingTool && !showDrawingMenu && !showPixelateMenu && !showBlurMenu && !showFilterMenu && !areaStampMode && !areaClipboard}"
+        :class="{'translate-y-full': !showControls && !activeControl && !drawingTool && !showDrawingMenu && !showPixelateMenu && !showBlurMenu && !showCaptionMenu && !showFilterMenu && !areaStampMode && !areaClipboard}"
       >
         <div class="flex justify-center space-x-4" v-if="!activeControl">
           <!-- Botão de Crop -->
@@ -1348,10 +1348,13 @@
           </button>
           <button
             type="button"
-            title="Legendas — faixa branca por baixo (estilo Word)"
-            @click="toggleControl('caption')"
+            title="Legendas — folha, imagem ou estilo"
+            @click="toggleCaptionMenu"
             class="p-2 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white"
-            :class="{ 'bg-blue-500': activeControl === 'caption' }"
+            :class="{
+              'bg-blue-500': activeControl === 'caption',
+              'ring-2 ring-sky-200/60': showCaptionMenu
+            }"
           >
             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h10M4 14h14M4 18h8" />
@@ -1510,6 +1513,63 @@
           </div>
         </div>
 
+        <div
+          v-show="showCaptionMenu"
+          class="pointer-events-auto absolute bottom-full left-1/2 z-[55] mb-2 w-[min(100vw-2rem,18rem)] -translate-x-1/2 rounded-2xl border border-white/15 bg-black/90 px-3 py-3 shadow-2xl backdrop-blur-sm"
+          role="menu"
+          @click.stop
+        >
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <p class="text-center text-[11px] text-white/70">Legendas</p>
+            <button
+              type="button"
+              title="Fechar"
+              class="rounded-full p-0.5 text-white/60 hover:bg-white/15 hover:text-white"
+              @click="showCaptionMenu = false"
+            >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div class="flex flex-col gap-2">
+            <button
+              type="button"
+              title="Prefixo, número e descrição da composição"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="activeControl === 'caption' && captionPanelMode === 'sheet' ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectCaptionPanel('sheet')"
+            >
+              Legenda da folha
+            </button>
+            <button
+              type="button"
+              title="Prefixo, número e descrição da imagem seleccionada"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="[
+                activeControl === 'caption' && captionPanelMode === 'overlay' ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15',
+                imageOverlays.length === 0 ? 'cursor-not-allowed opacity-40 hover:bg-white/5' : ''
+              ]"
+              :disabled="imageOverlays.length === 0"
+              @click="selectCaptionPanel('overlay')"
+            >
+              Legenda por imagem
+              <span v-if="imageOverlays.length === 0" class="mt-0.5 block text-[10px] text-white/45">
+                Adicione imagens ao conjunto para activar.
+              </span>
+            </button>
+            <button
+              type="button"
+              title="Separador, tamanho, cor e bordos partilhados"
+              class="rounded-xl border px-3 py-2 text-left text-sm text-white transition"
+              :class="activeControl === 'caption' && captionPanelMode === 'style' ? 'border-sky-400 bg-sky-900/50' : 'border-white/20 bg-white/5 hover:bg-white/15'"
+              @click="selectCaptionPanel('style')"
+            >
+              Estilo das legendas
+            </button>
+          </div>
+        </div>
+
         <!-- Input de ficheiro sempre no DOM (o painel de marca de água usa activeControl !== null). -->
         <input
           ref="watermarkImageInputRef"
@@ -1615,6 +1675,18 @@
                   class="rounded-full p-1 bg-white/15 hover:bg-white/25"
                   :class="{ 'ring-2 ring-amber-200/60': showPixelateMenu }"
                   @click="togglePixelateMenu"
+                >
+                  <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
+                  </svg>
+                </button>
+                <button
+                  v-if="activeControl === 'caption'"
+                  type="button"
+                  title="Escolher tipo de legenda (folha, imagem, estilo)"
+                  class="rounded-full p-1 bg-white/15 hover:bg-white/25"
+                  :class="{ 'ring-2 ring-sky-200/60': showCaptionMenu }"
+                  @click="toggleCaptionMenu"
                 >
                   <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
@@ -1727,120 +1799,123 @@
               <p class="text-[10px] text-white/50">Clique no texto para editar. Gravado na imagem ao guardar.</p>
             </div>
 
-            <!-- Legendas (estilo Word) -->
+            <!-- Legendas (estilo Word) — painéis separados via sub-menu -->
             <div v-else-if="activeControl === 'caption'" class="mt-2 max-h-[50vh] w-full max-w-xs space-y-3 overflow-y-auto">
-              <p class="text-center text-[11px] text-white/60">
-                Legenda global por baixo da composição ou legendas individuais em cada imagem colada.
-              </p>
-              <div>
-                <label class="mb-1 block text-sm text-white">Prefixo da numeração</label>
-                <div class="flex flex-wrap gap-1">
-                  <button
-                    v-for="preset in captionPrefixPresets"
-                    :key="'cap-pre-' + preset"
-                    type="button"
-                    class="rounded-lg border px-2 py-0.5 text-xs text-white transition"
-                    :class="isCaptionPrefixPresetActive(preset) ? 'border-sky-400 bg-sky-900/50' : 'border-white/15 bg-white/10 hover:bg-white/20'"
-                    @click="setCaptionPrefix(preset)"
-                  >{{ captionPrefixPresetLabel(preset) }}</button>
-                </div>
-                <input
-                  v-if="showCustomCaptionPrefix"
-                  v-model="captionSettings.prefix"
-                  type="text"
-                  maxlength="40"
-                  placeholder="Ex.: Quadro, Planta…"
-                  class="mt-2 w-full rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
-                  @input="onCaptionSettingsChange"
-                />
-              </div>
-              <div>
-                <label class="mb-1 block text-sm text-white">Separador</label>
-                <div class="flex flex-wrap gap-1">
-                  <button
-                    v-for="opt in captionSeparatorOptions"
-                    :key="'cap-sep-' + opt.id"
-                    type="button"
-                    class="rounded-lg border px-2 py-1 text-xs text-white transition"
-                    :class="captionSettings.separator === opt.id ? 'border-sky-400 bg-sky-900/50' : 'border-white/15 bg-white/10 hover:bg-white/20'"
-                    @click="captionSettings.separator = opt.id; onCaptionSettingsChange()"
-                  >{{ opt.label }}</button>
-                </div>
-              </div>
-              <div>
-                <label class="mb-1 block text-sm text-white">Tamanho do texto: {{ captionSettings.fontSize }} px (ecrã)</label>
-                <input
-                  v-model.number="captionSettings.fontSize"
-                  type="range"
-                  min="10"
-                  max="120"
-                  class="w-full accent-white"
-                  @input="onCaptionSettingsChange"
-                />
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  class="rounded-lg px-3 py-1.5 text-xs text-white"
-                  :class="captionSettings.bold ? 'bg-blue-600' : 'bg-white/15'"
-                  @click="captionSettings.bold = !captionSettings.bold; onCaptionSettingsChange()"
-                >
-                  Negrito
-                </button>
-                <label class="flex items-center gap-1 text-sm text-white">
-                  Cor
-                  <input v-model="captionSettings.color" type="color" class="editor-color-input" @input="onCaptionSettingsChange" />
-                </label>
-              </div>
-              <div class="rounded-lg border border-white/15 bg-white/5 p-2">
-                <p class="mb-2 text-xs font-medium text-white/75">Bordo da legenda</p>
-                <div class="mb-2 space-y-1.5">
-                  <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
-                    <input
-                      v-model="captionSettings.bandBorderCanvasEnabled"
-                      type="checkbox"
-                      class="rounded"
-                      @change="onCaptionSettingsChange"
-                    />
-                    Legenda da folha
-                  </label>
-                  <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
-                    <input
-                      v-model="captionSettings.bandBorderAllOverlaysEnabled"
-                      type="checkbox"
-                      class="rounded"
-                      @change="onCaptionSettingsChange"
-                    />
-                    Todas as imagens com legenda
-                  </label>
-                </div>
-                <div class="space-y-2">
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs text-white/70">Cor</span>
-                    <input v-model="captionSettings.bandBorderColor" type="color" class="editor-color-input" @input="onCaptionSettingsChange" />
-                  </div>
-                  <div>
-                    <label class="block text-xs text-white/70">Espessura: {{ captionSettings.bandBorderWidth }}px</label>
-                    <input
-                      v-model.number="captionSettings.bandBorderWidth"
-                      type="range"
-                      min="1"
-                      max="8"
-                      class="w-full accent-white"
-                      @input="onCaptionSettingsChange"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div v-if="photoCaptionDraft" class="space-y-2">
+              <div v-if="captionPanelMode === 'style'" class="space-y-3">
+                <p class="text-center text-[11px] text-white/60">
+                  Estilo partilhado por todas as legendas (separador, tipografia e bordos).
+                </p>
                 <div>
-                  <label class="mb-1 block text-sm text-white">Número</label>
+                  <label class="mb-1 block text-sm text-white">Separador</label>
+                  <div class="flex flex-wrap gap-1">
+                    <button
+                      v-for="opt in captionSeparatorOptions"
+                      :key="'cap-sep-' + opt.id"
+                      type="button"
+                      class="rounded-lg border px-2 py-1 text-xs text-white transition"
+                      :class="captionSettings.separator === opt.id ? 'border-sky-400 bg-sky-900/50' : 'border-white/15 bg-white/10 hover:bg-white/20'"
+                      @click="captionSettings.separator = opt.id; onCaptionSettingsChange()"
+                    >{{ opt.label }}</button>
+                  </div>
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm text-white">Tamanho do texto: {{ captionSettings.fontSize }} px (ecrã)</label>
                   <input
-                    v-model.number="photoCaptionDraft.number"
+                    v-model.number="captionSettings.fontSize"
+                    type="range"
+                    min="10"
+                    max="120"
+                    class="w-full accent-white"
+                    @input="onCaptionSettingsChange"
+                  />
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    class="rounded-lg px-3 py-1.5 text-xs text-white"
+                    :class="captionSettings.bold ? 'bg-blue-600' : 'bg-white/15'"
+                    @click="captionSettings.bold = !captionSettings.bold; onCaptionSettingsChange()"
+                  >
+                    Negrito
+                  </button>
+                  <label class="flex items-center gap-1 text-sm text-white">
+                    Cor
+                    <input v-model="captionSettings.color" type="color" class="editor-color-input" @input="onCaptionSettingsChange" />
+                  </label>
+                </div>
+                <div class="rounded-lg border border-white/15 bg-white/5 p-2">
+                  <p class="mb-2 text-xs font-medium text-white/75">Bordo da legenda</p>
+                  <div class="mb-2 space-y-1.5">
+                    <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
+                      <input
+                        v-model="captionSettings.bandBorderCanvasEnabled"
+                        type="checkbox"
+                        class="rounded"
+                        @change="onCaptionSettingsChange"
+                      />
+                      Legenda da folha
+                    </label>
+                    <label class="flex cursor-pointer items-center gap-2 text-sm text-white">
+                      <input
+                        v-model="captionSettings.bandBorderAllOverlaysEnabled"
+                        type="checkbox"
+                        class="rounded"
+                        @change="onCaptionSettingsChange"
+                      />
+                      Todas as imagens com legenda
+                    </label>
+                  </div>
+                  <div class="space-y-2">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-white/70">Cor</span>
+                      <input v-model="captionSettings.bandBorderColor" type="color" class="editor-color-input" @input="onCaptionSettingsChange" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-white/70">Espessura: {{ captionSettings.bandBorderWidth }}px</label>
+                      <input
+                        v-model.number="captionSettings.bandBorderWidth"
+                        type="range"
+                        min="1"
+                        max="8"
+                        class="w-full accent-white"
+                        @input="onCaptionSettingsChange"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="captionPanelMode === 'sheet' && photoCaptionDraft" class="space-y-2">
+                <div>
+                  <label class="mb-1 block text-sm text-white">Prefixo</label>
+                  <div class="flex flex-wrap gap-1">
+                    <button
+                      v-for="preset in captionPrefixPresets"
+                      :key="'cap-sheet-pre-' + preset"
+                      type="button"
+                      class="rounded-lg border px-2 py-0.5 text-xs text-white transition"
+                      :class="isDraftCaptionPrefixActive(photoCaptionDraft, preset) ? 'border-sky-400 bg-sky-900/50' : 'border-white/15 bg-white/10 hover:bg-white/20'"
+                      @click="setPhotoCaptionPrefix(preset)"
+                    >{{ captionPrefixPresetLabel(preset) }}</button>
+                  </div>
+                  <input
+                    v-if="captionUsesCustomPrefix(photoCaptionDraft.prefix)"
+                    v-model="photoCaptionDraft.prefix"
+                    type="text"
+                    maxlength="40"
+                    placeholder="Ex.: Quadro, Planta…"
+                    class="mt-2 w-full rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-sm text-white">Número (opcional)</label>
+                  <input
+                    v-model="photoCaptionDraft.number"
                     type="number"
                     min="1"
                     max="9999"
-                    class="w-full rounded bg-white/20 p-2 text-sm text-white"
+                    placeholder="Vazio = só descrição"
+                    class="w-full rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
                   />
                 </div>
                 <div>
@@ -1849,7 +1924,7 @@
                     v-model="photoCaptionDraft.description"
                     rows="2"
                     maxlength="2000"
-                    placeholder="Descrição da foto"
+                    placeholder="Ex.: Praias"
                     class="w-full resize-y rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
                   />
                 </div>
@@ -1859,7 +1934,7 @@
                 <p class="text-[10px] text-white/50">
                   {{
                     photoCaptionApplied
-                      ? 'Legenda ativa. Aplique de novo para atualizar.'
+                      ? 'Legenda activa. Aplique de novo para atualizar.'
                       : 'Confirme para ver a faixa branca na composição.'
                   }}
                 </p>
@@ -1869,7 +1944,7 @@
                   :disabled="!photoCaptionDraftCanApply"
                   @click="confirmPhotoCaption"
                 >
-                  Aplicar à foto
+                  Aplicar à folha
                 </button>
                 <button
                   v-if="photoCaptionApplied"
@@ -1880,9 +1955,12 @@
                   Remover legenda
                 </button>
               </div>
-              <div v-if="imageOverlays.length > 0" class="space-y-2 border-t border-white/15 pt-3">
-                <p class="text-center text-[11px] font-medium text-white/75">Legenda por imagem</p>
-                <p v-if="!selectedOverlayId" class="text-center text-[10px] text-white/50">
+
+              <div v-else-if="captionPanelMode === 'overlay'" class="space-y-2">
+                <p v-if="imageOverlays.length === 0" class="text-center text-[10px] text-white/50">
+                  Adicione imagens ao conjunto para legendas individuais.
+                </p>
+                <p v-else-if="!selectedOverlayId" class="text-center text-[10px] text-white/50">
                   Seleccione uma imagem no canvas (clique nela) para editar a legenda.
                 </p>
                 <div v-else-if="overlayCaptionDraft" class="space-y-2">
@@ -1891,13 +1969,35 @@
                     <span v-if="selectedOverlayHasCaption">(legenda activa)</span>
                   </p>
                   <div>
-                    <label class="mb-1 block text-sm text-white">Número</label>
+                    <label class="mb-1 block text-sm text-white">Prefixo</label>
+                    <div class="flex flex-wrap gap-1">
+                      <button
+                        v-for="preset in captionPrefixPresets"
+                        :key="'cap-ov-pre-' + preset"
+                        type="button"
+                        class="rounded-lg border px-2 py-0.5 text-xs text-white transition"
+                        :class="isDraftCaptionPrefixActive(overlayCaptionDraft, preset) ? 'border-sky-400 bg-sky-900/50' : 'border-white/15 bg-white/10 hover:bg-white/20'"
+                        @click="setOverlayCaptionPrefix(preset)"
+                      >{{ captionPrefixPresetLabel(preset) }}</button>
+                    </div>
                     <input
-                      v-model.number="overlayCaptionDraft.number"
+                      v-if="captionUsesCustomPrefix(overlayCaptionDraft.prefix)"
+                      v-model="overlayCaptionDraft.prefix"
+                      type="text"
+                      maxlength="40"
+                      placeholder="Ex.: Quadro, Planta…"
+                      class="mt-2 w-full rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-1 block text-sm text-white">Número (opcional)</label>
+                    <input
+                      v-model="overlayCaptionDraft.number"
                       type="number"
                       min="1"
                       max="9999"
-                      class="w-full rounded bg-white/20 p-2 text-sm text-white"
+                      placeholder="Vazio = só descrição"
+                      class="w-full rounded bg-white/20 p-2 text-sm text-white placeholder-gray-400"
                     />
                   </div>
                   <div>
@@ -1949,6 +2049,10 @@
                   </button>
                 </div>
               </div>
+
+              <p v-else class="text-center text-[11px] text-white/55">
+                Escolha um tipo no menu acima.
+              </p>
             </div>
             
             <!-- Gama: dois parâmetros + presets (Intervention só expõe gamma() global) -->
@@ -2893,6 +2997,9 @@ const pathDraftHoverPos = ref(null)
 const showDrawingMenu = ref(false)
 const showPixelateMenu = ref(false)
 const showBlurMenu = ref(false)
+const showCaptionMenu = ref(false)
+/** @type {import('vue').Ref<'style'|'sheet'|'overlay'|null>} */
+const captionPanelMode = ref(null)
 const showFilterMenu = ref(false)
 const activeFilterPreset = ref(null)
 
@@ -3123,13 +3230,13 @@ const photoCaptionDraft = ref(null)
 const overlayCaptionDraft = ref(null)
 
 const createDefaultPhotoCaptionDraft = () => ({
-  number: 1,
-  description: ''
+  number: null,
+  description: '',
+  prefix: 'Fig.'
 })
 
 const captionStandardPrefixes = ['Fig.', 'Figura', 'Imagem', 'Foto', '']
 const captionPrefixPresets = [...captionStandardPrefixes, '__custom__']
-const showCustomCaptionPrefix = ref(false)
 const captionSeparatorOptions = [
   { id: ' — ', label: '—' },
   { id: ' - ', label: '-' },
@@ -3448,14 +3555,14 @@ const restoreEditSnapshot = async (snap) => {
   captionSettings.value = snap.captionSettings
     ? migrateCaptionSettings(snap.captionSettings)
     : createDefaultCaptionSettings()
-  showCustomCaptionPrefix.value = !captionStandardPrefixes.includes(captionSettings.value.prefix)
   if (snap.photoCaptionApplied) {
-    photoCaptionApplied.value = cloneJson(snap.photoCaptionApplied)
+    photoCaptionApplied.value = normalizeStoredCaption(snap.photoCaptionApplied)
   } else if (snap.photoCaption?.enabled) {
-    photoCaptionApplied.value = {
-      number: snap.photoCaption.number ?? 1,
-      description: snap.photoCaption.description ?? ''
-    }
+    photoCaptionApplied.value = normalizeStoredCaption({
+      number: snap.photoCaption.number ?? null,
+      description: snap.photoCaption.description ?? '',
+      prefix: snap.photoCaption.prefix
+    })
   } else {
     photoCaptionApplied.value = null
   }
@@ -6447,6 +6554,10 @@ const closeActiveControlPanel = () => {
     closePixelateOption()
     return
   }
+  if (activeControl.value === 'caption') {
+    showCaptionMenu.value = false
+    captionPanelMode.value = null
+  }
   activeControl.value = null
 }
 
@@ -6467,6 +6578,10 @@ const toggleControl = (control) => {
       closePixelateOption()
       return
     }
+    if (control === 'caption') {
+      showCaptionMenu.value = false
+      captionPanelMode.value = null
+    }
     activeControl.value = null
     if (control === 'text') {
       selectedTextIndex.value = null
@@ -6482,8 +6597,14 @@ const toggleControl = (control) => {
       openWatermarkDraft()
     }
     if (control === 'caption') {
+      // Prefer the submenu entry points (toggleCaptionMenu / selectCaptionPanel).
       openPhotoCaptionDraft()
       syncOverlayCaptionDraftFromSelection()
+      if (!captionPanelMode.value) {
+        captionPanelMode.value = 'sheet'
+      }
+    } else {
+      showCaptionMenu.value = false
     }
     if (control !== 'text') {
       selectedTextIndex.value = null
@@ -7003,7 +7124,14 @@ const getControlLabel = (control) => {
     pixelate: 'Pixelização (tamanho do bloco)',
     sharpen: 'Nitidez (negativo = suavizar)',
     text: 'Adicionar Texto',
-    caption: 'Legendas',
+    caption:
+      captionPanelMode.value === 'sheet'
+        ? 'Legenda da folha'
+        : captionPanelMode.value === 'overlay'
+          ? 'Legenda por imagem'
+          : captionPanelMode.value === 'style'
+            ? 'Estilo das legendas'
+            : 'Legendas',
     watermark: 'Marca de água'
   }
   return labels[control] || ''
@@ -7208,6 +7336,7 @@ const toggleFilterMenu = () => {
     commitPendingEffectEdits()
     showBlurMenu.value = false
     showPixelateMenu.value = false
+    showCaptionMenu.value = false
     showDrawingMenu.value = false
     drawingTool.value = null
   }
@@ -8833,12 +8962,66 @@ const overlaysPassthroughForTextTool = computed(
 
 const imageDisplayScale = () => compositionDisplayMetrics.value.scale || 1
 
-const formatCaptionText = (number, description) => {
-  const prefix = (captionSettings.value.prefix || '').trim()
+const normalizeCaptionNumber = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 1 || n > 9999) {
+    return null
+  }
+  return Math.round(n)
+}
+
+const captionNumberInputInvalid = (value) => {
+  if (value === null || value === undefined || value === '') {
+    return false
+  }
+  return normalizeCaptionNumber(value) === null
+}
+
+const formatCaptionText = (number, description, prefix = null) => {
+  const resolvedPrefix = String(prefix ?? captionSettings.value.prefix ?? '').trim()
   const sep = captionSettings.value.separator || ' — '
-  const numPart = prefix ? `${prefix} ${number}` : String(number)
+  const n = normalizeCaptionNumber(number)
   const desc = (description || '').trim()
-  return desc ? `${numPart}${sep}${desc}` : numPart
+  const numPart = n === null ? '' : resolvedPrefix ? `${resolvedPrefix} ${n}` : String(n)
+  if (numPart && desc) {
+    return `${numPart}${sep}${desc}`
+  }
+  return numPart || desc
+}
+
+const resolveCaptionPrefix = (cap) => {
+  if (cap && typeof cap === 'object' && Object.prototype.hasOwnProperty.call(cap, 'prefix')) {
+    return String(cap.prefix ?? '')
+  }
+
+  return String(captionSettings.value.prefix ?? 'Fig.')
+}
+
+const normalizeStoredCaption = (cap) => {
+  if (!cap || typeof cap !== 'object') {
+    return null
+  }
+
+  return {
+    number: normalizeCaptionNumber(cap.number),
+    description: cap.description || '',
+    prefix: resolveCaptionPrefix(cap)
+  }
+}
+
+const captionDraftHasContent = (draft) => {
+  if (!draft) {
+    return false
+  }
+  if (captionNumberInputInvalid(draft.number)) {
+    return false
+  }
+  const n = normalizeCaptionNumber(draft.number)
+  const desc = (draft.description || '').trim()
+  return n !== null || desc !== ''
 }
 
 const splitWordToMaxWidth = (word, maxWidthPx, ctx) => {
@@ -8916,8 +9099,8 @@ const captionBandInnerWidthNat = (bandWidthNat, hasBorder) => {
   return Math.max(1, bandWidthNat - padding * 2 - borderW * 2)
 }
 
-const wrapCaptionForDisplay = (number, description, bandWidthNat, hasBorder) => {
-  const content = formatCaptionText(number, description)
+const wrapCaptionForDisplay = (number, description, bandWidthNat, hasBorder, prefix = null) => {
+  const content = formatCaptionText(number, description, prefix)
 
   if (!bandWidthNat) {
     return content
@@ -8976,7 +9159,7 @@ const captionBorderStyleForCanvas = computed(() => buildCaptionBorderStyle(canva
 
 const captionBorderStyleForOverlay = (ov) => buildCaptionBorderStyle(overlayCaptionHasBorder(ov))
 
-const estimateCaptionBandHeightNat = (number, description, widthNat, hasBorder = false) => {
+const estimateCaptionBandHeightNat = (number, description, widthNat, hasBorder = false, prefix = null) => {
   if (!widthNat || widthNat < 2) {
     return 0
   }
@@ -8985,7 +9168,7 @@ const estimateCaptionBandHeightNat = (number, description, widthNat, hasBorder =
   const borderW = hasBorder ? captionBandBorderWidthNatural() : 0
   const fontSizeDisp = Math.max(9, naturalTextSizeToDisplay(captionFontSizeNatural()))
   const innerWDisp = Math.max(1, naturalUnitToDisplay(captionBandInnerWidthNat(widthNat, hasBorder)))
-  const content = formatCaptionText(number, description)
+  const content = formatCaptionText(number, description, prefix)
   const wrapped = wrapCaptionTextToWidth(content, fontSizeDisp, innerWDisp, captionSettings.value.bold)
   const lines = wrapped.split('\n').filter((line, index, all) => line !== '' || all.length > 1).length || 1
   const textHNat = displayTextSizeToNatural(lines * fontSizeDisp * 1.3)
@@ -9012,7 +9195,8 @@ const compositionExtraBottomNat = computed(() => {
         photoCaptionApplied.value.number,
         photoCaptionApplied.value.description,
         el.naturalWidth,
-        canvasCaptionHasBorder.value
+        canvasCaptionHasBorder.value,
+        resolveCaptionPrefix(photoCaptionApplied.value)
       )
     )
   }
@@ -9025,7 +9209,8 @@ const compositionExtraBottomNat = computed(() => {
       ov.caption.number,
       ov.caption.description,
       ov.width,
-      overlayCaptionHasBorder(ov)
+      overlayCaptionHasBorder(ov),
+      resolveCaptionPrefix(ov.caption)
     )
     // Legenda sempre por baixo da imagem (horizontal), independentemente da rotação.
     extra = Math.max(extra, ov.y + ov.height + bandH - nh)
@@ -9094,7 +9279,8 @@ const photoCaptionBandStyle = computed(() => {
     photoCaptionApplied.value.number,
     photoCaptionApplied.value.description,
     el.naturalWidth,
-    canvasCaptionHasBorder.value
+    canvasCaptionHasBorder.value,
+    resolveCaptionPrefix(photoCaptionApplied.value)
   )
   return {
     left: `${m.ox}px`,
@@ -9134,7 +9320,8 @@ const wrappedCanvasCaptionText = computed(() => {
     photoCaptionApplied.value.number,
     photoCaptionApplied.value.description,
     el?.naturalWidth || 0,
-    canvasCaptionHasBorder.value
+    canvasCaptionHasBorder.value,
+    resolveCaptionPrefix(photoCaptionApplied.value)
   )
 })
 
@@ -9150,7 +9337,8 @@ const wrappedOverlayCaptionText = (ov) => {
     ov.caption.number,
     ov.caption.description,
     ov.width,
-    overlayCaptionHasBorder(ov)
+    overlayCaptionHasBorder(ov),
+    resolveCaptionPrefix(ov.caption)
   )
 }
 
@@ -9186,22 +9374,30 @@ const syncOverlayCaptionDraftFromSelection = () => {
   }
   overlayCaptionDraft.value = ov.caption
     ? {
-        ...clonePhotoCaption(ov.caption),
+        ...normalizeStoredCaption(ov.caption),
         bandBorderEnabled: Boolean(ov.captionBandBorderEnabled)
       }
-    : { number: nextOverlayCaptionNumber(), description: '', bandBorderEnabled: false }
+    : {
+        number: nextOverlayCaptionNumber(),
+        description: '',
+        prefix: String(captionSettings.value.prefix ?? 'Fig.'),
+        bandBorderEnabled: false
+      }
 }
 
 const overlayCaptionPreviewSample = computed(() => {
-  const n = overlayCaptionDraft.value?.number ?? 1
-  const desc = overlayCaptionDraft.value?.description ?? 'Descrição desta imagem'
-  return formatCaptionText(n, desc || 'Descrição desta imagem')
+  const n = overlayCaptionDraft.value?.number
+  const desc = (overlayCaptionDraft.value?.description || '').trim()
+  const prefix = resolveCaptionPrefix(overlayCaptionDraft.value)
+  if (normalizeCaptionNumber(n) === null && !desc) {
+    return formatCaptionText(null, 'Descrição desta imagem', prefix)
+  }
+  return formatCaptionText(n, desc || 'Descrição desta imagem', prefix)
 })
 
-const overlayCaptionDraftCanApply = computed(() => {
-  const n = Number(overlayCaptionDraft.value?.number)
-  return Number.isFinite(n) && n >= 1 && n <= 9999 && Boolean(selectedOverlayId.value)
-})
+const overlayCaptionDraftCanApply = computed(
+  () => captionDraftHasContent(overlayCaptionDraft.value) && Boolean(selectedOverlayId.value)
+)
 
 const onOverlayCaptionBorderDraftChange = () => {
   if (!selectedOverlayId.value || !overlayCaptionDraft.value || !selectedOverlayHasCaption.value) {
@@ -9231,7 +9427,8 @@ const overlayCaptionBandStyle = (ov) => {
     ov.caption.number,
     ov.caption.description,
     ov.width,
-    overlayCaptionHasBorder(ov)
+    overlayCaptionHasBorder(ov),
+    resolveCaptionPrefix(ov.caption)
   )
   const bandDisp = naturalRectToDisplay(0, 0, ov.width, bandNat)
   const bandH = Math.max(1, bandDisp.height)
@@ -9255,8 +9452,9 @@ const confirmOverlayCaption = () => {
   updated[idx] = {
     ...updated[idx],
     caption: {
-      number: Math.max(1, Math.round(overlayCaptionDraft.value.number)),
-      description: overlayCaptionDraft.value.description || ''
+      number: normalizeCaptionNumber(overlayCaptionDraft.value.number),
+      description: overlayCaptionDraft.value.description || '',
+      prefix: resolveCaptionPrefix(overlayCaptionDraft.value)
     },
     captionBandBorderEnabled: Boolean(overlayCaptionDraft.value.bandBorderEnabled)
   }
@@ -9285,9 +9483,7 @@ const removeOverlayCaption = (overlayId) => {
 
 const openCaptionForOverlay = (overlayId) => {
   selectedOverlayId.value = overlayId
-  activeControl.value = 'caption'
-  openPhotoCaptionDraft()
-  syncOverlayCaptionDraftFromSelection()
+  selectCaptionPanel('overlay')
   closeOverlayContextMenu()
 }
 
@@ -9625,8 +9821,9 @@ const mapImageOverlaysPayload = () =>
     }
     if (caption) {
       item.caption = {
-        number: Math.max(1, Math.round(caption.number || 1)),
-        description: caption.description || ''
+        number: normalizeCaptionNumber(caption.number),
+        description: caption.description || '',
+        prefix: resolveCaptionPrefix(caption)
       }
       item.caption_angle = 0
       item.caption_band_border = overlayCaptionHasBorder(ov)
@@ -9636,7 +9833,7 @@ const mapImageOverlaysPayload = () =>
 
 const captionPrefixPresetLabel = (preset) => {
   if (preset === '') {
-    return '(só n.º)'
+    return '(sem prefixo)'
   }
   if (preset === '__custom__') {
     return 'Personalizado'
@@ -9644,34 +9841,56 @@ const captionPrefixPresetLabel = (preset) => {
   return preset
 }
 
-const isCaptionPrefixPresetActive = (preset) => {
-  if (preset === '__custom__') {
-    return showCustomCaptionPrefix.value || !captionStandardPrefixes.includes(captionSettings.value.prefix)
+const captionUsesCustomPrefix = (prefix) => !captionStandardPrefixes.includes(prefix ?? '')
+
+const isDraftCaptionPrefixActive = (draft, preset) => {
+  if (!draft) {
+    return false
   }
-  return !showCustomCaptionPrefix.value && captionSettings.value.prefix === preset
+  const current = draft.prefix ?? ''
+  if (preset === '__custom__') {
+    return captionUsesCustomPrefix(current)
+  }
+  return !captionUsesCustomPrefix(current) && current === preset
 }
 
-const setCaptionPrefix = (preset) => {
-  if (preset === '__custom__') {
-    showCustomCaptionPrefix.value = true
-    if (captionStandardPrefixes.includes(captionSettings.value.prefix)) {
-      captionSettings.value.prefix = ''
-    }
-    onCaptionSettingsChange()
+const applyPrefixPresetToDraft = (draft, preset) => {
+  if (!draft) {
     return
   }
-  showCustomCaptionPrefix.value = false
-  captionSettings.value.prefix = preset
-  onCaptionSettingsChange()
+  if (preset === '__custom__') {
+    if (!captionUsesCustomPrefix(draft.prefix)) {
+      draft.prefix = ''
+    }
+    return
+  }
+  draft.prefix = preset
+}
+
+const setPhotoCaptionPrefix = (preset) => {
+  ensurePhotoCaptionDraft()
+  applyPrefixPresetToDraft(photoCaptionDraft.value, preset)
+}
+
+const setOverlayCaptionPrefix = (preset) => {
+  if (!overlayCaptionDraft.value) {
+    return
+  }
+  applyPrefixPresetToDraft(overlayCaptionDraft.value, preset)
 }
 
 const captionPreviewSample = computed(() => {
-  const n = photoCaptionDraft.value?.number ?? photoCaptionApplied.value?.number ?? 1
-  const desc =
+  const n = photoCaptionDraft.value?.number ?? photoCaptionApplied.value?.number
+  const desc = (
     photoCaptionDraft.value?.description ??
     photoCaptionApplied.value?.description ??
-    'Descrição da foto'
-  return formatCaptionText(n, desc || 'Descrição da foto')
+    ''
+  ).trim()
+  const prefix = resolveCaptionPrefix(photoCaptionDraft.value ?? photoCaptionApplied.value)
+  if (normalizeCaptionNumber(n) === null && !desc) {
+    return formatCaptionText(null, 'Descrição da foto', prefix)
+  }
+  return formatCaptionText(n, desc || 'Descrição da foto', prefix)
 })
 
 const onCaptionSettingsChange = () => {
@@ -9682,7 +9901,9 @@ const clonePhotoCaption = (cap) => JSON.parse(JSON.stringify(cap))
 
 const openPhotoCaptionDraft = () => {
   photoCaptionDraft.value = photoCaptionApplied.value
-    ? clonePhotoCaption(photoCaptionApplied.value)
+    ? {
+        ...normalizeStoredCaption(photoCaptionApplied.value)
+      }
     : createDefaultPhotoCaptionDraft()
 }
 
@@ -9692,18 +9913,16 @@ const ensurePhotoCaptionDraft = () => {
   }
 }
 
-const photoCaptionDraftCanApply = computed(() => {
-  const n = Number(photoCaptionDraft.value?.number)
-  return Number.isFinite(n) && n >= 1 && n <= 9999
-})
+const photoCaptionDraftCanApply = computed(() => captionDraftHasContent(photoCaptionDraft.value))
 
 const confirmPhotoCaption = () => {
   if (!photoCaptionDraftCanApply.value || !photoCaptionDraft.value) {
     return
   }
   photoCaptionApplied.value = {
-    number: Math.max(1, Math.round(photoCaptionDraft.value.number)),
-    description: photoCaptionDraft.value.description || ''
+    number: normalizeCaptionNumber(photoCaptionDraft.value.number),
+    description: photoCaptionDraft.value.description || '',
+    prefix: resolveCaptionPrefix(photoCaptionDraft.value)
   }
   activeControl.value = null
   recordEditHistory()
@@ -10560,6 +10779,7 @@ const closeDrawingMenu = () => {
   showDrawingMenu.value = false
   showPixelateMenu.value = false
   showBlurMenu.value = false
+  showCaptionMenu.value = false
   showFilterMenu.value = false
 }
 
@@ -10672,6 +10892,7 @@ const togglePixelateMenu = () => {
     showPixelateMenu.value = true
     showDrawingMenu.value = false
     showBlurMenu.value = false
+    showCaptionMenu.value = false
     return
   }
   if (activeControl.value === 'pixelate' || showPixelateRegion.value) {
@@ -10682,6 +10903,53 @@ const togglePixelateMenu = () => {
   showPixelateMenu.value = true
   showDrawingMenu.value = false
   showBlurMenu.value = false
+  showCaptionMenu.value = false
+}
+
+const toggleCaptionMenu = () => {
+  if (showCaptionMenu.value) {
+    showCaptionMenu.value = false
+    return
+  }
+  if (activeControl.value === 'caption') {
+    showCaptionMenu.value = true
+    showDrawingMenu.value = false
+    showBlurMenu.value = false
+    showPixelateMenu.value = false
+    showFilterMenu.value = false
+    return
+  }
+  commitPendingEffectEdits()
+  if (activeControl.value === 'blur') {
+    closeBlurOption()
+  } else if (activeControl.value === 'pixelate') {
+    closePixelateOption()
+  } else if (activeControl.value && activeControl.value !== 'caption') {
+    activeControl.value = null
+  }
+  showCaptionMenu.value = true
+  showDrawingMenu.value = false
+  showBlurMenu.value = false
+  showPixelateMenu.value = false
+  showFilterMenu.value = false
+}
+
+const selectCaptionPanel = (mode) => {
+  if (mode === 'overlay' && imageOverlays.value.length === 0) {
+    return
+  }
+  commitPendingEffectEdits()
+  if (activeControl.value === 'blur') {
+    closeBlurOption()
+  } else if (activeControl.value === 'pixelate') {
+    closePixelateOption()
+  }
+  captionPanelMode.value = mode
+  activeControl.value = 'caption'
+  showCaptionMenu.value = false
+  openPhotoCaptionDraft()
+  syncOverlayCaptionDraftFromSelection()
+  selectedTextIndex.value = null
 }
 
 const toggleBlurMenu = () => {
@@ -10694,6 +10962,7 @@ const toggleBlurMenu = () => {
     showBlurMenu.value = true
     showDrawingMenu.value = false
     showPixelateMenu.value = false
+    showCaptionMenu.value = false
     return
   }
   if (activeControl.value === 'blur' || showBlurRegion.value) {
@@ -10704,6 +10973,7 @@ const toggleBlurMenu = () => {
   showBlurMenu.value = true
   showDrawingMenu.value = false
   showPixelateMenu.value = false
+  showCaptionMenu.value = false
 }
 
 const selectBlurRectangle = () => {
@@ -10982,6 +11252,7 @@ const selectDrawingTool = (tool) => {
   commitPendingEffectEdits()
   showPixelateMenu.value = false
   showBlurMenu.value = false
+  showCaptionMenu.value = false
   if (activeControl.value === 'blur' || activeControl.value === 'pixelate') {
     activeControl.value = null
     applyChanges()
@@ -11362,8 +11633,9 @@ const buildEditPayload = (options = {}) => {
   if (options.includeSaveFields) {
     payload.photo_caption = {
       enabled: photoCaptionApplied.value !== null,
-      number: Math.max(1, Math.round(photoCaptionApplied.value?.number || 1)),
-      description: photoCaptionApplied.value?.description || ''
+      number: normalizeCaptionNumber(photoCaptionApplied.value?.number),
+      description: photoCaptionApplied.value?.description || '',
+      prefix: resolveCaptionPrefix(photoCaptionApplied.value)
     }
     payload.save_mode = saveMode.value
     if (props.galleryFoldersEnabled && saveMode.value === 'copy') {
@@ -11515,6 +11787,8 @@ const syncStateAfterSave = (url) => {
   showDrawingMenu.value = false
   showPixelateMenu.value = false
   showBlurMenu.value = false
+  showCaptionMenu.value = false
+  captionPanelMode.value = null
   showFilterMenu.value = false
   activeFilterPreset.value = null
   activeControl.value = null
@@ -11540,7 +11814,6 @@ const syncStateAfterSave = (url) => {
   canvasLayerStack.value = []
   selectedOverlayId.value = null
   captionSettings.value = createDefaultCaptionSettings()
-  showCustomCaptionPrefix.value = false
   photoCaptionApplied.value = null
   photoCaptionDraft.value = null
   watermarkApplied.value = null

@@ -979,7 +979,10 @@ class ImageService
         }
 
         $config = $this->resolveCaptionConfigForCanvas($data);
-        $number = max(1, (int) ($cap['number'] ?? 1));
+        if (array_key_exists('prefix', $cap)) {
+            $config['prefix'] = trim((string) ($cap['prefix'] ?? ''));
+        }
+        $number = $this->resolveCaptionNumber($cap['number'] ?? null);
         $description = trim((string) ($cap['description'] ?? ''));
         $captionText = $this->formatCaptionText($config, $number, $description);
 
@@ -1051,21 +1054,61 @@ class ImageService
     }
 
     /**
+     * Formats caption text; omits prefix/number when number is absent.
+     *
      * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}  $config
      */
-    private function formatCaptionText(array $config, int $number, string $description): string
+    private function formatCaptionText(array $config, ?int $number, string $description): string
     {
         $prefix = trim($config['prefix']);
-        $numPart = $prefix !== '' ? $prefix.' '.$number : (string) $number;
         $description = trim($description);
+        $numPart = '';
 
-        if ($description === '') {
-            return $numPart;
+        if ($number !== null) {
+            $numPart = $prefix !== '' ? $prefix.' '.$number : (string) $number;
         }
 
-        $separator = (string) ($config['separator'] ?? ' — ');
+        if ($numPart !== '' && $description !== '') {
+            $separator = (string) ($config['separator'] ?? ' — ');
 
-        return $numPart.$separator.$description;
+            return $numPart.$separator.$description;
+        }
+
+        return $numPart !== '' ? $numPart : $description;
+    }
+
+    /**
+     * @param  mixed  $value
+     */
+    private function resolveCaptionNumber(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $number = (int) $value;
+
+        if ($number < 1 || $number > 9999) {
+            return null;
+        }
+
+        return $number;
+    }
+
+    /**
+     * @param  array{number?: mixed, description?: mixed}  $caption
+     */
+    private function captionHasRenderableContent(array $caption): bool
+    {
+        if ($this->resolveCaptionNumber($caption['number'] ?? null) !== null) {
+            return true;
+        }
+
+        return trim((string) ($caption['description'] ?? '')) !== '';
     }
 
     /**
@@ -1223,7 +1266,7 @@ class ImageService
             }
 
             $caption = $item['caption'] ?? null;
-            if (is_array($caption) && isset($caption['number'])) {
+            if (is_array($caption) && $this->captionHasRenderableContent($caption)) {
                 try {
                     $captionAngle = ((int) ($item['caption_angle'] ?? 0) % 360 + 360) % 360;
                     $this->drawOverlayCaptionBand(
@@ -1244,9 +1287,9 @@ class ImageService
     }
 
     /**
-     * Faixa branca com legenda por baixo de um overlay (coordenadas da imagem final).
+     * White caption band below an overlay (final image coordinates).
      *
-     * @param  array{number: int, description?: string}  $caption
+     * @param  array{number?: int|null, description?: string, prefix?: string|null}  $caption
      * @param  array{prefix: string, separator: string, font_size: float, band_padding: int, color: string, bold: bool, band_border_color: ?string, band_border_width: int}  $config
      */
     private function drawOverlayCaptionBand(
@@ -1259,8 +1302,11 @@ class ImageService
         array $config,
         int $angle = 0
     ): void {
-        $number = max(1, (int) ($caption['number'] ?? 1));
+        $number = $this->resolveCaptionNumber($caption['number'] ?? null);
         $description = trim((string) ($caption['description'] ?? ''));
+        if (array_key_exists('prefix', $caption)) {
+            $config['prefix'] = trim((string) ($caption['prefix'] ?? ''));
+        }
         $captionText = $this->formatCaptionText($config, $number, $description);
 
         if ($captionText === '') {
